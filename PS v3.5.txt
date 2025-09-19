@@ -1,0 +1,280 @@
+//@version=6
+indicator("Multi-Timeframe RSI & Trend Signals V3.4-final (Dock + Session Shading + Alerts)", overlay=true)
+
+// ==========================
+// v3.5 Risk/Targets (Bridge-compatible)
+// ==========================
+// Inputs for SL/TP
+slMode   = input.string("Pips", "SL/TP Mode", options=["Pips","Percent"])
+slPips   = input.int(20,  "Stop Loss (pips)")
+tpPips   = input.int(40,  "Take Profit (pips)")
+slPct    = input.float(0.5, "Stop Loss (% of price)")
+tpPct    = input.float(1.0, "Take Profit (% of price)")
+
+// Instrument string (used by bridge)
+var string instrument_id = syminfo.ticker
+
+// Pip size (simple & robust default)
+pip = syminfo.mintick
+
+// SL & TP calculations relative to current close (entry)
+slBuy  = slMode == "Pips" ? close - slPips * pip : close * (1 - slPct/100.0)
+tpBuy  = slMode == "Pips" ? close + tpPips * pip : close * (1 + tpPct/100.0)
+slSell = slMode == "Pips" ? close + slPips * pip : close * (1 + slPct/100.0)
+tpSell = slMode == "Pips" ? close - tpPips * pip : close * (1 - tpPct/100.0)
+
+
+// === Inputs ===
+rsiLength    = input.int(14, "RSI Length")
+maLength     = input.int(50, "SMA Length (Trend)")
+useCloseOnly = input.bool(true, "Signals on Bar Close Only")
+use5mAlerts  = input.bool(true, "Enable 5M Buy/Sell Alerts?")
+
+// ---- UI sizing ----
+f_toSize(opt) => opt == "Tiny" ? size.tiny : opt == "Small" ? size.small : opt == "Large" ? size.large : size.normal
+dockTextSizeOpt = input.string("Small", "Dock Text Size", options=["Tiny","Small","Normal","Large"])
+dockTextSize    = f_toSize(dockTextSizeOpt)
+
+// Compact mode
+compactMode = input.bool(true, "Compact Mode (shrink dock & hide RSI bg)")
+
+// RSI Thresholds & Presets
+rsiBuyLevel  = input.int(63, "RSI Buy Threshold (<)")
+rsiSellLevel = input.int(43, "RSI Sell Threshold (>)")
+usePreset    = input.bool(true, "Use Preset Thresholds?")
+presetSet    = input.string("Set A (43/63)", "Preset Choice", options=["Set A (43/63)", "Set B (45/65)"])
+rsiBuyLevel  := usePreset ? (presetSet == "Set A (43/63)" ? 63 : 65) : rsiBuyLevel
+rsiSellLevel := usePreset ? (presetSet == "Set A (43/63)" ? 43 : 45) : rsiSellLevel
+
+// EMA Trend Filter
+useEMAFilter = input.bool(true, "Use EMA Trend Filter?")
+emaLength    = input.int(200, "EMA Length (Trend)")
+
+// Risk/SL/TP
+atrLen    = input.int(14, "ATR Length (for ATR SL)")
+atrMult   = input.float(1.5, "ATR Multiplier", step=0.1)
+slMethod  = input.string("Swing", "Stop Method", options=["Swing", "ATR"])
+swingLen  = input.int(10, "Swing Length")
+rr        = input.float(2.0, "TP Risk/Reward Multiplier", step=0.1)
+autoClear = input.bool(true, "Clear SL/TP when hit?")
+
+// Session Filter
+useSessionFilter = input.bool(true, "Restrict to London/NY Sessions (8AM-10PM GMT)?")
+
+// Timeframes
+tf1 = input.timeframe("240", "Higher TF (4H)")
+tf2 = input.timeframe("60",  "Mid TF (1H)")
+tf3 = input.timeframe("5",   "Lower TF (5M)")
+
+src_tf1 = request.security(syminfo.tickerid, tf1, close)
+src_tf2 = request.security(syminfo.tickerid, tf2, close)
+src_tf3 = request.security(syminfo.tickerid, tf3, close)
+
+// RSI & MAs
+rsi_tf1 = ta.rsi(src_tf1, rsiLength)
+rsi_tf2 = ta.rsi(src_tf2, rsiLength)
+rsi_tf3 = ta.rsi(src_tf3, rsiLength)
+sma_tf1 = ta.sma(src_tf1, maLength)
+sma_tf2 = ta.sma(src_tf2, maLength)
+sma_tf3 = ta.sma(src_tf3, maLength)
+ema_tf1 = ta.ema(src_tf1, emaLength)
+ema_tf2 = ta.ema(src_tf2, emaLength)
+ema_tf3 = ta.ema(src_tf3, emaLength)
+
+// Trends
+bullish_tf1 = useEMAFilter ? (src_tf1 > sma_tf1 and src_tf1 > ema_tf1) : src_tf1 > sma_tf1
+bullish_tf2 = useEMAFilter ? (src_tf2 > sma_tf2 and src_tf2 > ema_tf2) : src_tf2 > sma_tf2
+bullish_tf3 = useEMAFilter ? (src_tf3 > sma_tf3 and src_tf3 > ema_tf3) : src_tf3 > sma_tf3
+bearish_tf1 = useEMAFilter ? (src_tf1 < sma_tf1 and src_tf1 < ema_tf1) : src_tf1 < sma_tf1
+bearish_tf2 = useEMAFilter ? (src_tf2 < sma_tf2 and src_tf2 < ema_tf2) : src_tf2 < sma_tf2
+bearish_tf3 = useEMAFilter ? (src_tf3 < sma_tf3 and src_tf3 < ema_tf3) : src_tf3 < sma_tf3
+
+allBullish = bullish_tf1 and bullish_tf2 and bullish_tf3
+allBearish = bearish_tf1 and bearish_tf2 and bearish_tf3
+
+// Base conditions
+baseBuy  = allBullish and (rsi_tf3 < rsiBuyLevel)
+baseSell = allBearish and (rsi_tf3 > rsiSellLevel)
+
+// Filters
+useVolumeFilter = input.bool(true, "Use Volume Filter?")
+vol_tf3         = request.security(syminfo.tickerid, tf3, volume)
+volMA_tf3       = ta.sma(vol_tf3, 20)
+volumeSpike     = vol_tf3 > volMA_tf3 * 1.5
+
+useMACDFilter   = input.bool(true, "Use MACD Filter?")
+[macdLine, signalLine, _] = ta.macd(src_tf3, 12, 26, 9)
+macdBullish = macdLine > signalLine
+macdBearish = macdLine < signalLine
+
+useSRFilter   = input.bool(true, "Use Support/Resistance Filter?")
+pivotHigh     = ta.pivothigh(high, 5, 5)
+pivotLow      = ta.pivotlow(low, 5, 5)
+lastPivotHigh = ta.valuewhen(not na(pivotHigh), pivotHigh, 0)
+lastPivotLow  = ta.valuewhen(not na(pivotLow),  pivotLow,  0)
+atrVal        = ta.atr(atrLen)
+atrProximity  = atrVal * 0.5
+nearSupport   = not na(lastPivotLow)  and math.abs(close - lastPivotLow)  <= atrProximity
+nearResistance= not na(lastPivotHigh) and math.abs(close - lastPivotHigh) <= atrProximity
+
+// Candlestick Filter
+useCandleFilter = input.bool(true, "Use Candlestick Pattern Filter?")
+bullishEngulfing = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+bearishEngulfing = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+hammer       = close > open and (high - math.max(close, open)) > 2 * (math.min(close, open) - low)
+shootingStar = close < open and (math.min(close, open) - low) > 2 * (high - math.max(close, open))
+doji         = math.abs(close - open) <= (high - low) * 0.1
+morningStar  = close[2] < open[2] and doji[1] and close > (open[2] + (high[2] - low[2]) * 0.5)
+eveningStar  = close[2] > open[2] and doji[1] and close < (open[2] - (high[2] - low[2]) * 0.5)
+candleBullish = bullishEngulfing or hammer or morningStar
+candleBearish = bearishEngulfing or shootingStar or eveningStar
+
+// === Session Filter (London 08:00–16:00, NY 13:00–22:00) ===
+inSession = not useSessionFilter or not na(time(timeframe.period, "0800-2200", "GMT"))
+
+// === Session Highlighting (Background Shading) ===
+londonSession = not na(time(timeframe.period, "0800-1600", "GMT"))
+newYorkSession = not na(time(timeframe.period, "1300-2200", "GMT"))
+
+londonColor = color.new(color.green, 85)
+nyColor     = color.new(color.blue, 85)
+
+bgcolor(londonSession ? londonColor : na)
+bgcolor(newYorkSession ? nyColor : na)
+
+// === Helper for dock filter colors ===
+fColor(on) =>
+    on ? color.green : color.red
+
+// Signal logic
+buyRaw  = baseBuy  and (not useVolumeFilter or volumeSpike) and (not useMACDFilter or macdBullish) and (not useSRFilter or nearSupport)   and (not useCandleFilter or candleBullish) and inSession
+sellRaw = baseSell and (not useVolumeFilter or volumeSpike) and (not useMACDFilter or macdBearish) and (not useSRFilter or nearResistance) and (not useCandleFilter or candleBearish) and inSession
+
+buyState  = buyRaw  and (not useCloseOnly or barstate.isconfirmed)
+sellState = sellRaw and (not useCloseOnly or barstate.isconfirmed)
+waitState = not buyState and not sellState
+newBuy  = buyState  and not buyState[1]
+newSell = sellState and not sellState[1]
+newWait = waitState and not waitState[1]
+
+// Wait text
+var string waitText = "WAIT"
+waitText := "WAIT"
+if not inSession
+    waitText := "WAIT: Outside London/NY Session"
+else if not allBullish and not allBearish
+    waitText := "WAIT: Mixed Trend"
+else if allBullish and (rsi_tf3 >= rsiBuyLevel)
+    waitText := "WAIT: RSI > " + str.tostring(rsiBuyLevel)
+else if allBearish and (rsi_tf3 <= rsiSellLevel)
+    waitText := "WAIT: RSI < " + str.tostring(rsiSellLevel)
+else if useCandleFilter and allBullish and not candleBullish
+    waitText := "WAIT: No Bullish Candle"
+else if useCandleFilter and allBearish and not candleBearish
+    waitText := "WAIT: No Bearish Candle"
+
+// === SL/TP Engine ===
+swingLowSeries  = ta.lowest(low,  swingLen)
+swingHighSeries = ta.highest(high, swingLen)
+var float entryPrice = na
+var float sl         = na
+var float tp         = na
+var string side      = ""
+if newBuy
+    entryPrice := close
+    sl := slMethod == "Swing" ? swingLowSeries : close - atrVal * atrMult
+    tp := close + rr * (close - sl)
+    side := "BUY"
+if newSell
+    entryPrice := close
+    sl := slMethod == "Swing" ? swingHighSeries : close + atrVal * atrMult
+    tp := close - rr * (sl - close)
+    side := "SELL"
+if autoClear and ((side == "BUY" and (close >= tp or close <= sl)) or (side == "SELL" and (close <= tp or close >= sl)))
+    entryPrice := na, sl := na, tp := na, side := ""
+
+// TP/SL hits
+tpHit = (side == "BUY" and close >= tp) or (side == "SELL" and close <= tp)
+slHit = (side == "BUY" and close <= sl) or (side == "SELL" and close >= sl)
+
+// Risk/Reward & PnL
+f_pip() =>
+    mt = syminfo.mintick
+    mt == 0.00001 ? 0.0001 : mt == 0.001 ? 0.01 : mt
+pip = f_pip()
+riskPips    = na(entryPrice) or na(sl) ? na : math.abs(entryPrice - sl) / pip
+rewardPips  = na(entryPrice) or na(tp) ? na : math.abs(tp - entryPrice) / pip
+rrActual    = na(riskPips) or riskPips == 0 ? na : rewardPips / riskPips
+pnlPips     = na(entryPrice) ? na : (side == "BUY" ? (close - entryPrice) : (entryPrice - close)) / pip
+fmtPips(x)  => na(x) ? "-" : str.tostring(math.round(x, 1))
+fmtRR(x)    => na(x) ? "-" : str.tostring(math.round(x, 2))
+
+// === Alerts (JSON for OANDA bridge with instrument support) ===
+instrument_id = str.replace_all(syminfo.ticker, "OANDA:", "")
+instrument_id := str.substring(instrument_id, 0, 3) + "_" + str.substring(instrument_id, 3, 6)
+
+if newBuy
+    alert('{"message":"BUY","entry":' + str.tostring(close, format.mintick) + " ,\"sl\":' + str.tostring(slBuy, format.mintick) + " ,\"tp\":' + str.tostring(tpBuy, format.mintick) + " ,\"instrument\":\"' + instrument_id + '\"}', alert.freq_once_per_bar)
+
+if newSell
+    alert('{"message":"SELL","entry":' + str.tostring(close, format.mintick) + " ,\"sl\":' + str.tostring(slSell, format.mintick) + " ,\"tp\":' + str.tostring(tpSell, format.mintick) + " ,\"instrument\":\"' + instrument_id + '\"}', alert.freq_once_per_bar)
+
+// No WAIT alerts (dock still shows WAIT)
+
+if tpHit
+    alert('{"message":"TP","instrument":"' + instrument_id + '"}', alert.freq_once_per_bar)
+
+if slHit
+    alert('{"message":"SL","instrument":"' + instrument_id + '"}', alert.freq_once_per_bar)
+
+// === Dock ===
+statusText  = buyState ? "BUY" : sellState ? "SELL" : "WAIT"
+statusColor = buyState ? color.green : sellState ? color.red : color.gray
+rowCount = 9
+var table rightDock = na
+if na(rightDock) or barstate.isfirst
+    if not na(rightDock)
+        table.delete(rightDock)
+    rightDock := table.new(position.bottom_right, 7, rowCount, border_width=0)
+
+if barstate.islast
+    // Signal
+    table.cell(rightDock, 0, 0, "Signal:", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=dockTextSize)
+    // TF header
+    table.cell(rightDock, 0, 1, "TF", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 1, "Trend", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 1, "RSI", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    // TF rows
+    table.cell(rightDock, 0, 2, "4H", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 2, bullish_tf1 ? "↑ Bull" : bearish_tf1 ? "↓ Bear" : "→ Neutral", bgcolor=bullish_tf1 ? color.green : bearish_tf1 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 2, str.tostring(rsi_tf1, "#.##"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 3, "1H", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 3, bullish_tf2 ? "↑ Bull" : bearish_tf2 ? "↓ Bear" : "→ Neutral", bgcolor=bullish_tf2 ? color.green : bearish_tf2 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 3, str.tostring(rsi_tf2, "#.##"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 4, "5M", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 4, bullish_tf3 ? "↑ Bull" : bearish_tf3 ? "↓ Bear" : "→ Neutral", bgcolor=bullish_tf3 ? color.green : bearish_tf3 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 4, str.tostring(rsi_tf3, "#.##"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    // Stats header
+    table.cell(rightDock, 0, 5, "Side", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 5, "Entry", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 5, "SL", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 3, 5, "TP", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 4, 5, "Risk(p)", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 5, 5, "Rew(p)", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 6, 5, "RR|PnL", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    // Stats values
+    sideTxt = (side == "" or na(entryPrice)) ? "None" : side
+    table.cell(rightDock, 0, 6, sideTxt, bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 6, str.tostring(entryPrice, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 6, str.tostring(sl, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 3, 6, str.tostring(tp, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 4, 6, fmtPips(riskPips), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 5, 6, fmtPips(rewardPips), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 6, 6, fmtRR(rrActual) + " | " + fmtPips(pnlPips), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    // Filters footer
+    table.cell(rightDock, 0, 7, "Filters:", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 7, "V", bgcolor=fColor(useVolumeFilter), text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 7, "M", bgcolor=fColor(useMACDFilter), text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 3, 7, "C", bgcolor=fColor(useCandleFilter), text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 4, 7, "S", bgcolor=fColor(useSessionFilter), text_color=color.white, text_size=dockTextSize)
