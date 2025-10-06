@@ -163,23 +163,34 @@ avgAtr = ta.sma(atrVal, 20)
 highVol = useDynamicRR and atrVal > avgAtr * volAtrMult
 dynamicRR = highVol ? rr * 0.75 : rr
 
-// Signal logic (with BB filter added)
-buyRaw = baseBuy and htfConfirmBuy and 
-         (not useVolumeFilter or volumeSpike) and 
-         (not useMACDFilter or macdBullish) and 
-         (not useSRFilter or nearSupport) and 
-         (not useCandleFilter or candleBullish) and 
-         (not useBBFilter or bbBullish) and 
-         inSession and pairFilterBuy
+// === Enhanced Signal Logic (v3.37-flex) ===
 
-sellRaw = baseSell and htfConfirmSell and 
+// --- New tuning inputs ---
+rsiSellFlex    = input.int(65, "RSI Sell Threshold (flexible)", tooltip="Higher value = earlier SELLs")
+requireAllTFs  = input.bool(false, "Require all 3 TFs for trend alignment?", tooltip="If OFF, 2 of 3 allowed")
+useMomentumCandle = input.bool(true, "Allow Momentum Candle Override?", tooltip="Large red candle may trigger early SELL")
+
+// --- Determine multi-TF alignment (2-of-3 logic) ---
+tfBearCount = (bearish_tf1 ? 1 : 0) + (bearish_tf2 ? 1 : 0) + (bearish_tf3 ? 1 : 0)
+multiTfBear  = requireAllTFs ? (tfBearCount == 3) : (tfBearCount >= 2)
+
+// --- Momentum candle check (strong bearish bar) ---
+strongBearCandle = useMomentumCandle and close < open and (open - close) > ta.atr(14) * 0.5
+
+// --- Base conditions for SELL ---
+baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > rsiSellFlex)
+
+// --- Main SELL logic with BB + filters ---
+sellRaw = (baseSellFlex and htfConfirmSell and 
           (not useVolumeFilter or volumeSpike) and 
           (not useMACDFilter or macdBearish) and 
           (not useSRFilter or nearResistance) and 
           (not useCandleFilter or candleBearish) and 
           (not useBBFilter or bbBearish) and 
-          inSession and pairFilterSell
+          inSession and pairFilterSell) or strongBearCandle
 
+// --- Tie newSell to sellRaw for compatibility ---
+newSell = sellRaw
 // Drift filter
 f_pip() =>
     mt = syminfo.mintick
