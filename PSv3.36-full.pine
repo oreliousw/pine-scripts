@@ -1,5 +1,5 @@
 //@version=6
-indicator("PSv3.36-full Indicator + BB Filter", overlay=true)
+indicator("PSv3.37-beta (BB Flex)", overlay=true)
 
 // === Inputs ===
 rsiLength = input.int(14, "RSI Length")
@@ -163,24 +163,29 @@ avgAtr = ta.sma(atrVal, 20)
 highVol = useDynamicRR and atrVal > avgAtr * volAtrMult
 dynamicRR = highVol ? rr * 0.75 : rr
 
-// === Enhanced Signal Logic (v3.37-flex) ===
+// ==============================
+// === SIGNAL LOGIC SECTION  ====
+// ==============================
 
-// --- New tuning inputs ---
+// --- BUY logic (restored; mirrors your original filters) ---
+buyRaw = baseBuy and htfConfirmBuy and 
+         (not useVolumeFilter or volumeSpike) and 
+         (not useMACDFilter or macdBullish) and 
+         (not useSRFilter or nearSupport) and 
+         (not useCandleFilter or candleBullish) and 
+         (not useBBFilter or bbBullish) and 
+         inSession and pairFilterBuy
+
+// --- SELL logic (v3.37-flex: RSI flex + 2-of-3 TF + momentum override) ---
 rsiSellFlex    = input.int(65, "RSI Sell Threshold (flexible)", tooltip="Higher value = earlier SELLs")
 requireAllTFs  = input.bool(false, "Require all 3 TFs for trend alignment?", tooltip="If OFF, 2 of 3 allowed")
 useMomentumCandle = input.bool(true, "Allow Momentum Candle Override?", tooltip="Large red candle may trigger early SELL")
 
-// --- Determine multi-TF alignment (2-of-3 logic) ---
 tfBearCount = (bearish_tf1 ? 1 : 0) + (bearish_tf2 ? 1 : 0) + (bearish_tf3 ? 1 : 0)
 multiTfBear  = requireAllTFs ? (tfBearCount == 3) : (tfBearCount >= 2)
-
-// --- Momentum candle check (strong bearish bar) ---
 strongBearCandle = useMomentumCandle and close < open and (open - close) > ta.atr(14) * 0.5
-
-// --- Base conditions for SELL ---
 baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > rsiSellFlex)
 
-// --- Main SELL logic with BB + filters ---
 sellRaw = (baseSellFlex and htfConfirmSell and 
           (not useVolumeFilter or volumeSpike) and 
           (not useMACDFilter or macdBearish) and 
@@ -189,17 +194,12 @@ sellRaw = (baseSellFlex and htfConfirmSell and
           (not useBBFilter or bbBearish) and 
           inSession and pairFilterSell) or strongBearCandle
 
-// --- Tie newSell to sellRaw for compatibility ---
-newSell = sellRaw
-
-// === Define buy/sell state & link legacy variables ===
+// Link legacy flags + state tracking (used by drift filter & dock)
 newBuy  = buyRaw
 newSell = sellRaw
 
-// Track most recent signal state
 var bool buyState  = false
 var bool sellState = false
-
 if buyRaw
     buyState := true
     sellState := false
@@ -207,15 +207,18 @@ else if sellRaw
     sellState := true
     buyState := false
 
-
 // Drift filter
 f_pip() =>
     mt = syminfo.mintick
     mt == 0.00001 ? 0.0001 : mt == 0.001 ? 0.01 : mt
 pip = f_pip()
 driftPips = math.abs(close - close[1]) / pip
-validSignalBuy = newBuy and (not useDriftFilter or driftPips <= maxDriftPips)
+validSignalBuy  = newBuy  and (not useDriftFilter or driftPips <= maxDriftPips)
 validSignalSell = newSell and (not useDriftFilter or driftPips <= maxDriftPips)
+
+// Optionally require bar close for triggers (labels/alerts)
+triggerBuy  = validSignalBuy  and (not useCloseOnly or barstate.isconfirmed)
+triggerSell = validSignalSell and (not useCloseOnly or barstate.isconfirmed)
 
 // Wait text
 var string waitText = "WAIT"
@@ -253,13 +256,13 @@ var float sl         = na
 var float tp         = na
 var string side      = ""
 
-if validSignalBuy
+if triggerBuy
     entryPrice := close
     rawSl = slMethod == "Swing" ? swingLowSeries : close - atrVal * atrMult
     sl := math.max(rawSl, close - minSlPips * pip)
     tp := close + dynamicRR * (close - sl)
     side := "BUY"
-if validSignalSell
+if triggerSell
     entryPrice := close
     rawSl = slMethod == "Swing" ? swingHighSeries : close + atrVal * atrMult
     sl := math.min(rawSl, close + minSlPips * pip)
@@ -279,9 +282,9 @@ if useTrailing and not na(entryPrice) and side != ""
             sl := math.min(sl, newSl)
 
 // Signal visualization for indicator
-if validSignalBuy
+if triggerBuy
     label.new(bar_index, high, "BUY", color=color.green, style=label.style_label_down, textcolor=color.white)
-if validSignalSell
+if triggerSell
     label.new(bar_index, low, "SELL", color=color.red, style=label.style_label_up, textcolor=color.white)
 
 if autoClear and ((side == "BUY" and (close >= tp or close <= sl)) or (side == "SELL" and (close <= tp or close >= sl)))
@@ -308,25 +311,25 @@ instrument_id = str.replace_all(syminfo.ticker, "OANDA:", "")
 instrument_id := str.substring(instrument_id, 0, 3) + "_" + str.substring(instrument_id, 3, 6)
 timestamp = str.tostring(time, "yyyy-MM-dd HH:mm:ss")
 
-if validSignalBuy and use5mAlerts
+if triggerBuy and use5mAlerts
     alert('{"message":"BUY","entry":' + str.tostring(close, format.mintick) +
           ',"sl":' + str.tostring(sl, format.mintick) +
           ',"tp":' + str.tostring(tp, format.mintick) +
-          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar)
+          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar_close)
 
-if validSignalSell and use5mAlerts
+if triggerSell and use5mAlerts
     alert('{"message":"SELL","entry":' + str.tostring(close, format.mintick) +
           ',"sl":' + str.tostring(sl, format.mintick) +
           ',"tp":' + str.tostring(tp, format.mintick) +
-          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar)
+          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar_close)
 
 // ENHANCED: TP/SL hits with est PnL
 estPnl = na(entryPrice) ? na : pnlPips * (syminfo.mintick * 10000) * (side == "BUY" ? 1 : -1)
 if tpHit and enableTpSlAlerts
-    alert('{"message":"TP","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar)
+    alert('{"message":"TP","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
 
 if slHit and enableTpSlAlerts
-    alert('{"message":"SL","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar)
+    alert('{"message":"SL","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
 
 // === Dock ===
 statusText  = buyState ? "BUY" : sellState ? "SELL" : waitText
