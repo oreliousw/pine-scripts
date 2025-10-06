@@ -191,6 +191,7 @@ sellRaw = (baseSellFlex and htfConfirmSell and
 
 // --- Tie newSell to sellRaw for compatibility ---
 newSell = sellRaw
+
 // Drift filter
 f_pip() =>
     mt = syminfo.mintick
