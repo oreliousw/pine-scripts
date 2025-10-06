@@ -192,6 +192,22 @@ sellRaw = (baseSellFlex and htfConfirmSell and
 // --- Tie newSell to sellRaw for compatibility ---
 newSell = sellRaw
 
+// === Define buy/sell state & link legacy variables ===
+newBuy  = buyRaw
+newSell = sellRaw
+
+// Track most recent signal state
+var bool buyState  = false
+var bool sellState = false
+
+if buyRaw
+    buyState := true
+    sellState := false
+else if sellRaw
+    sellState := true
+    buyState := false
+
+
 // Drift filter
 f_pip() =>
     mt = syminfo.mintick
