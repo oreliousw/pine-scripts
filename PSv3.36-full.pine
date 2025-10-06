@@ -183,7 +183,12 @@ useMomentumCandle = input.bool(true, "Allow Momentum Candle Override?", tooltip=
 
 tfBearCount = (bearish_tf1 ? 1 : 0) + (bearish_tf2 ? 1 : 0) + (bearish_tf3 ? 1 : 0)
 multiTfBear  = requireAllTFs ? (tfBearCount == 3) : (tfBearCount >= 2)
-strongBearCandle = useMomentumCandle and close < open and (open - close) > ta.atr(14) * 0.5
+
+// --- Momentum candle check (strong bearish bar) ---
+// Use global ATR for consistency (avoids historical recalculation warning)
+atrForMomentum = ta.atr(14)
+strongBearCandle = useMomentumCandle and close < open and (open - close) > atrForMomentum * 0.5
+
 baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > rsiSellFlex)
 
 sellRaw = (baseSellFlex and htfConfirmSell and 
