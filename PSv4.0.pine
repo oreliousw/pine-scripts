@@ -19,12 +19,12 @@ dockTextSizeOpt = input.string("Small", "Dock Text Size", options=["Tiny","Small
 dockTextSize    = f_toSize(dockTextSizeOpt)
 
 // RSI Thresholds & Presets
-rsiBuyLevel  = input.int(63, "RSI Buy Threshold (<)")
-rsiSellLevel = input.int(43, "RSI Sell Threshold (>)")
-usePreset    = input.bool(true, "Use Preset Thresholds?")
-presetSet    = input.string("Set A (43/63)", "Preset Choice", options=["Set A (43/63)", "Set B (45/65)"])
-rsiBuyLevel  := usePreset ? (presetSet == "Set A (43/63)" ? 63 : 65) : rsiBuyLevel
-rsiSellLevel := usePreset ? (presetSet == "Set A (43/63)" ? 43 : 45) : rsiSellLevel
+rsiBuyLevel  = input.int(60, "RSI Buy Threshold (<)")
+rsiSellLevel = input.int(40, "RSI Sell Threshold (>)")
+//usePreset    = input.bool(true, "Use Preset Thresholds?")
+//presetSet    = input.string("Set A (43/63)", "Preset Choice", options=["Set A (43/63)", "Set B (45/65)"])
+//rsiBuyLevel  := usePreset ? (presetSet == "Set A (43/63)" ? 63 : 65) : rsiBuyLevel
+//rsiSellLevel := usePreset ? (presetSet == "Set A (43/63)" ? 43 : 45) : rsiSellLevel
 
 // EMA Trend Filter
 useEMAFilter = input.bool(true, "Use EMA Trend Filter?")
