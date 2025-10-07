@@ -1,5 +1,5 @@
 //@version=6
-indicator("PSv3.37-beta (BB Flex)", overlay=true)
+indicator("PSv3.7 (BB Flex)", overlay=true)
 
 // === Inputs ===
 rsiLength = input.int(14, "RSI Length")
