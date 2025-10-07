@@ -1,0 +1,432 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Orelious
+
+//@version=6
+indicator("PSv4.0)", overlay=true)
+
+// === Inputs ===
+rsiLength        = input.int(14, "RSI Length")
+maLength         = input.int(50, "SMA Length (Trend)")
+useCloseOnly     = input.bool(true, "Signals on Bar Close Only")
+use5mAlerts      = input.bool(true, "Enable 5M Buy/Sell Alerts?")
+enableTpSlAlerts = input.bool(false, "Enable TP/SL Hit Alerts?")
+useReversalMode = input.bool(true, "Enable Reversal Mode?")
+rsiReversalOffset = input.int(8, "RSI Flex Offset (Reversal)", minval=1, maxval=20)
+
+// ---- UI sizing ----
+f_toSize(opt) => opt == "Tiny" ? size.tiny : opt == "Small" ? size.small : opt == "Large" ? size.large : size.normal
+dockTextSizeOpt = input.string("Small", "Dock Text Size", options=["Tiny","Small","Normal","Large"])
+dockTextSize    = f_toSize(dockTextSizeOpt)
+
+// RSI Thresholds & Presets
+rsiBuyLevel  = input.int(63, "RSI Buy Threshold (<)")
+rsiSellLevel = input.int(43, "RSI Sell Threshold (>)")
+usePreset    = input.bool(true, "Use Preset Thresholds?")
+presetSet    = input.string("Set A (43/63)", "Preset Choice", options=["Set A (43/63)", "Set B (45/65)"])
+rsiBuyLevel  := usePreset ? (presetSet == "Set A (43/63)" ? 63 : 65) : rsiBuyLevel
+rsiSellLevel := usePreset ? (presetSet == "Set A (43/63)" ? 43 : 45) : rsiSellLevel
+
+// EMA Trend Filter
+useEMAFilter = input.bool(true, "Use EMA Trend Filter?")
+emaLength    = input.int(20, "EMA Length (Trend)")
+
+// JPY Pair Exclusion
+useJpyPairs  = input.bool(false, "Trade JPY Pairs? (e.g., USDJPY)")
+
+// Risk/SL/TP
+atrLen        = input.int(14, "ATR Length (for ATR SL)")
+atrMult       = input.float(1.5, "ATR Multiplier", step=0.1)
+slMethod      = input.string("Swing", "Stop Method", options=["Swing", "ATR"])
+swingLen      = input.int(10, "Swing Length")
+rr            = input.float(2.0, "TP Risk/Reward Multiplier", step=0.1)
+minSlPips     = input.float(0.5, "Min SL Pips", minval=0.1, step=0.1)
+useTrailing   = input.bool(false, "Use Trailing Stop?")
+trailMult     = input.float(1.0, "Trail ATR Multiplier", step=0.1)
+trailActivate = input.float(0.5, "Trail Activation (RR)", step=0.1)
+autoClear     = input.bool(true, "Clear SL/TP when hit?")
+
+// Enhancements
+useDriftFilter   = input.bool(true, "Use Price Drift Filter? (>5 pips skip)")
+maxDriftPips     = input.float(5.0, "Max Drift Pips", step=0.1)
+useHtfConfirm    = input.bool(true, "Require HTF RSI Confirmation?")
+htfRsiBuyThresh  = input.int(50, "HTF RSI Buy Confirm (<)")
+htfRsiSellThresh = input.int(50, "HTF RSI Sell Confirm (>)")
+useDynamicRR     = input.bool(true, "Dynamic RR on High Vol?")
+volAtrMult       = input.float(2.0, "Vol Threshold (ATR Mult)")
+
+// Session Filter
+useSessionFilter = input.bool(true, "Restrict to London/NY Sessions (8AM-10PM GMT)?")
+
+// Bollinger Bands Filter
+useBBFilter  = input.bool(true, "Use Bollinger Bands Filter?")
+bbLength     = input.int(20, "BB Length")
+bbMult       = input.float(2.0, "BB Multiplier")
+// Visualization toggles
+showBBVisual     = input.bool(true, "Show Bollinger Bands Visualization?")
+shadeBBTouches   = input.bool(true, "Highlight Upper/Lower Band Touches?")
+bbShadeOpacity   = input.int(88, "BB Shade Opacity (0-100)", minval=0, maxval=100)
+
+basis = ta.sma(close, bbLength)
+dev   = ta.stdev(close, bbLength)
+upper = basis + bbMult * dev
+lower = basis - bbMult * dev
+
+bbBullish = close > basis and close < upper
+bbBearish = close < basis and close > lower
+
+// Timeframes
+tf1 = input.timeframe("240", "Higher TF (4H)")
+tf2 = input.timeframe("60", "Mid TF (1H)")
+tf3 = input.timeframe("5",   "Lower TF (5M)")
+
+src_tf1 = request.security(syminfo.tickerid, tf1, close)
+src_tf2 = request.security(syminfo.tickerid, tf2, close)
+src_tf3 = request.security(syminfo.tickerid, tf3, close)
+
+// RSI & MAs
+rsi_tf1 = ta.rsi(src_tf1, rsiLength)
+rsi_tf2 = ta.rsi(src_tf2, rsiLength)
+rsi_tf3 = ta.rsi(src_tf3, rsiLength)
+sma_tf1 = ta.sma(src_tf1, maLength)
+sma_tf2 = ta.sma(src_tf2, maLength)
+sma_tf3 = ta.sma(src_tf3, maLength)
+ema_tf1 = ta.ema(src_tf1, emaLength)
+ema_tf2 = ta.ema(src_tf2, emaLength)
+ema_tf3 = ta.ema(src_tf3, emaLength)
+
+// Trends
+bullish_tf1 = useEMAFilter ? (src_tf1 > sma_tf1 and src_tf1 > ema_tf1) : src_tf1 > sma_tf1
+bullish_tf2 = useEMAFilter ? (src_tf2 > sma_tf2 and src_tf2 > ema_tf2) : src_tf2 > sma_tf2
+bullish_tf3 = useEMAFilter ? (src_tf3 > sma_tf3 and src_tf3 > ema_tf3) : src_tf3 > sma_tf3
+bearish_tf1 = useEMAFilter ? (src_tf1 < sma_tf1 and src_tf1 < ema_tf1) : src_tf1 < sma_tf1
+bearish_tf2 = useEMAFilter ? (src_tf2 < sma_tf2 and src_tf2 < ema_tf2) : src_tf2 < sma_tf2
+bearish_tf3 = useEMAFilter ? (src_tf3 < sma_tf3 and src_tf3 < ema_tf3) : src_tf3 < sma_tf3
+allBullish   = bullish_tf1 and bullish_tf2 and bullish_tf3
+allBearish   = bearish_tf1 and bearish_tf2 and bearish_tf3
+
+// Base conditions (strict)
+baseBuy  = allBullish and (rsi_tf3 < rsiBuyLevel)
+baseSell = allBearish and (rsi_tf3 > rsiSellLevel)
+
+// === Reversal Mode Logic ===
+var bool reversalBuy = false
+var bool reversalSell = false
+if useReversalMode
+    rsiBuyCross  = ta.crossover(rsi_tf3, rsiBuyLevel - rsiReversalOffset)
+    rsiSellCross = ta.crossunder(rsi_tf3, rsiSellLevel + rsiReversalOffset)
+    bbBuyCross   = close > lower and close[1] < lower
+    bbSellCross  = close < upper and close[1] > upper
+
+    reversalBuy  := rsiBuyCross  and bbBuyCross
+    reversalSell := rsiSellCross and bbSellCross
+else
+    reversalBuy  := false
+    reversalSell := false
+
+// HTF RSI Confirmation
+htfConfirmBuy  = not useHtfConfirm or rsi_tf1 < htfRsiBuyThresh
+htfConfirmSell = not useHtfConfirm or rsi_tf1 > htfRsiSellThresh
+
+// JPY Pair Filter
+isJpyPair      = str.contains(syminfo.ticker, "JPY")
+pairFilterBuy  = not isJpyPair or useJpyPairs
+pairFilterSell = not isJpyPair or useJpyPairs
+
+// Filters
+useVolumeFilter = input.bool(true, "Use Volume Filter?")
+vol_tf3   = request.security(syminfo.tickerid, tf3, volume)
+volMA_tf3 = ta.sma(vol_tf3, 20)
+volumeSpike = vol_tf3 > volMA_tf3 * 1.5
+
+useMACDFilter = input.bool(true, "Use MACD Filter?")
+[macdLine, signalLine, _] = ta.macd(src_tf3, 12, 26, 9)
+macdBullish = macdLine > signalLine
+macdBearish = macdLine < signalLine
+
+useSRFilter = input.bool(true, "Use Support/Resistance Filter?")
+pivotHigh = ta.pivothigh(high, 5, 5)
+pivotLow  = ta.pivotlow(low, 5, 5)
+lastPivotHigh = ta.valuewhen(not na(pivotHigh), pivotHigh, 0)
+lastPivotLow  = ta.valuewhen(not na(pivotLow),  pivotLow,  0)
+atrVal = ta.atr(atrLen)
+atrProximity = atrVal * 0.5
+nearSupport   = not na(lastPivotLow)  and math.abs(close - lastPivotLow)  <= atrProximity
+nearResistance= not na(lastPivotHigh) and math.abs(close - lastPivotHigh) <= atrProximity
+
+// Candlestick Filter
+useCandleFilter = input.bool(true, "Use Candlestick Pattern Filter?")
+bullishEngulfing = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+bearishEngulfing = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+hammer = close > open and (math.min(close, open) - low) > 2 * (high - math.max(close, open))
+shootingStar = close < open and (high - math.max(close, open)) > 2 * (math.min(close, open) - low)
+doji = math.abs(close - open) <= (high - low) * 0.1
+morningStar = close[2] < open[2] and doji[1] and close > (open[2] + (high[2] - low[2]) * 0.5)
+eveningStar = close[2] > open[2] and doji[1] and close < (open[2] - (high[2] - low[2]) * 0.5)
+candleBullish = bullishEngulfing or hammer or morningStar
+candleBearish = bearishEngulfing or shootingStar or eveningStar
+
+// Session Filter (London 08:00–17:00, NY 13:00–22:00)
+inSession = not useSessionFilter or not na(time(timeframe.period, "0800-2200", "GMT"))
+
+// Background Shading (Sessions)
+londonSession = not na(time(timeframe.period, "0800-1700", "GMT"))
+newYorkSession = not na(time(timeframe.period, "1300-2200", "GMT"))
+londonColor = color.new(color.green, 85)
+nyColor     = color.new(color.blue, 85)
+bgcolor(londonSession ? londonColor : na)
+bgcolor(newYorkSession ? nyColor : na)
+
+// Helper
+fColor(on) =>
+    on ? color.green : color.red
+
+// Dynamic RR
+avgAtr   = ta.sma(atrVal, 20)
+highVol  = useDynamicRR and atrVal > avgAtr * volAtrMult
+dynamicRR= highVol ? rr * 0.75 : rr
+
+// === SIGNAL LOGIC ===
+
+// Flex controls
+rsiFlexOffset     = input.int(5, "RSI Flex Offset", minval=1, maxval=20)
+rsiSellFlex       = input.int(65, "RSI Sell Threshold (flexible)")
+requireAllTFs     = input.bool(false, "Require all 3 TFs for trend alignment?")
+useMomentumCandle = input.bool(true, "Allow Momentum Candle Override?")
+
+// 2-of-3 TF alignment
+tfBearCount  = (bearish_tf1 ? 1 : 0) + (bearish_tf2 ? 1 : 0) + (bearish_tf3 ? 1 : 0)
+multiTfBear  = requireAllTFs ? (tfBearCount == 3) : (tfBearCount >= 2)
+
+// Momentum (precompute ATR)
+atrForMomentum   = ta.atr(14)
+strongBullCandle = useMomentumCandle and close > open and (close - open) > atrForMomentum * 0.5
+strongBearCandle = useMomentumCandle and close < open and (open - close) > atrForMomentum * 0.5
+
+// BUY (flex)
+baseBuyFlex = allBullish and (rsi_tf3 < rsiBuyLevel or rsi_tf3 < (rsiBuyLevel - rsiFlexOffset))
+buyRaw = (baseBuyFlex and htfConfirmBuy and 
+         (not useVolumeFilter or volumeSpike) and 
+         (not useMACDFilter or macdBullish) and 
+         (not useSRFilter or nearSupport) and 
+         (not useCandleFilter or candleBullish) and 
+         (not useBBFilter or bbBullish) and 
+         inSession and pairFilterBuy) or strongBullCandle
+
+// SELL (flex)
+baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > (rsiSellLevel + rsiFlexOffset) or rsi_tf3 > rsiSellFlex)
+sellRaw = (baseSellFlex and htfConfirmSell and 
+          (not useVolumeFilter or volumeSpike) and 
+          (not useMACDFilter or macdBearish) and 
+          (not useSRFilter or nearResistance) and 
+          (not useCandleFilter or candleBearish) and 
+          (not useBBFilter or bbBearish) and 
+          inSession and pairFilterSell) or strongBearCandle
+
+// Legacy flags + state
+newBuy  = buyRaw
+newSell = sellRaw
+
+var bool buyState  = false
+var bool sellState = false
+if buyRaw
+    buyState := true
+    sellState := false
+else if sellRaw
+    sellState := true
+    buyState := false
+
+// Drift filter
+f_pip() =>
+    mt = syminfo.mintick
+    mt == 0.00001 ? 0.0001 : mt == 0.001 ? 0.01 : mt
+pip = f_pip()
+driftPips = math.abs(close - close[1]) / pip
+validSignalBuy  = newBuy  and (not useDriftFilter or driftPips <= maxDriftPips)
+validSignalSell = newSell and (not useDriftFilter or driftPips <= maxDriftPips)
+
+// Close-only option
+triggerBuy  = validSignalBuy  and (not useCloseOnly or barstate.isconfirmed)
+triggerSell = validSignalSell and (not useCloseOnly or barstate.isconfirmed)
+
+// Wait text (dock)
+var string waitText = "WAIT"
+waitText := "WAIT"
+if not inSession
+    waitText := "WAIT: Outside Session"
+else if not allBullish and not allBearish
+    waitText := "WAIT: Mixed Trend"
+else if allBullish and (rsi_tf3 >= rsiBuyLevel)
+    waitText := "WAIT: RSI >= " + str.tostring(rsiBuyLevel)
+else if allBearish and (rsi_tf3 <= rsiSellLevel)
+    waitText := "WAIT: RSI <= " + str.tostring(rsiSellLevel)
+else if useVolumeFilter and not volumeSpike
+    waitText := "WAIT: No Vol Spike"
+else if useMACDFilter and ((allBullish and not macdBullish) or (allBearish and not macdBearish))
+    waitText := "WAIT: MACD Misaligned"
+else if useCandleFilter and ((allBullish and not candleBullish) or (allBearish and not candleBearish))
+    waitText := "WAIT: No Candle Pattern"
+else if useSRFilter and ((allBullish and not nearSupport) or (allBearish and not nearResistance))
+    waitText := "WAIT: Away from S/R"
+else if useHtfConfirm and ((allBullish and rsi_tf1 >= htfRsiBuyThresh) or (allBearish and rsi_tf1 <= htfRsiSellThresh))
+    waitText := "WAIT: HTF RSI No Confirm"
+else if useDriftFilter and driftPips > maxDriftPips
+    waitText := "WAIT: Drift >" + str.tostring(maxDriftPips) + "p"
+else if highVol
+    waitText := "WAIT: High Vol (Tight RR)"
+else if isJpyPair and not useJpyPairs
+    waitText := "WAIT: JPY Pair Excluded"
+
+// === SL/TP Engine ===
+swingLowSeries  = ta.lowest(low,  swingLen)
+swingHighSeries = ta.highest(high, swingLen)
+var float entryPrice = na
+var float sl         = na
+var float tp         = na
+var string side      = ""
+
+// compute rr lines on triggers
+if triggerBuy
+    entryPrice := close
+    rawSl = slMethod == "Swing" ? swingLowSeries : close - atrVal * atrMult
+    sl := math.max(rawSl, close - minSlPips * pip)
+    tp := close + dynamicRR * (close - sl)
+    side := "BUY"
+if triggerSell
+    entryPrice := close
+    rawSl = slMethod == "Swing" ? swingHighSeries : close + atrVal * atrMult
+    sl := math.min(rawSl, close + minSlPips * pip)
+    tp := close - dynamicRR * (sl - close)
+    side := "SELL"
+
+// Trailing SL
+if useTrailing and not na(entryPrice) and side != ""
+    trailDistance = atrVal * trailMult
+    currentRR = na(entryPrice) or na(sl) ? 0 : side == "BUY" ? (close - entryPrice) / (entryPrice - sl) : (entryPrice - close) / (sl - entryPrice)
+    if currentRR >= trailActivate
+        if side == "BUY"
+            newSl = close - trailDistance
+            sl := math.max(sl, newSl)
+        if side == "SELL"
+            newSl = close + trailDistance
+            sl := math.min(sl, newSl)
+
+// --- Dashed TP/SL with line objects ---
+var line slLine = na
+var line tpLine = na
+if barstate.isnew
+    if not na(slLine)
+        line.delete(slLine), slLine := na
+    if not na(tpLine)
+        line.delete(tpLine), tpLine := na
+if not na(sl)
+    slLine := line.new(bar_index-1, sl, bar_index, sl, extend=extend.none, color=color.red, width=2, style=line.style_dashed)
+if not na(tp)
+    tpLine := line.new(bar_index-1, tp, bar_index, tp, extend=extend.none, color=color.green, width=2, style=line.style_dashed)
+
+// Signal labels
+if triggerBuy
+    label.new(bar_index, high, "BUY", color=color.green, style=label.style_label_down, textcolor=color.white)
+if triggerSell
+    label.new(bar_index, low, "SELL", color=color.red, style=label.style_label_up, textcolor=color.white)
+
+// Auto-clear
+if autoClear and ((side == "BUY" and (close >= tp or close <= sl)) or (side == "SELL" and (close <= tp or close >= sl)))
+    entryPrice := na, sl := na, tp := na, side := ""
+
+// TP/SL hits
+tpHit = (side == "BUY" and close >= tp) or (side == "SELL" and close <= tp)
+slHit = (side == "BUY" and close <= sl) or (side == "SELL" and close >= sl)
+
+// Risk/Reward & PnL
+riskPips    = na(entryPrice) or na(sl) ? na : math.abs(entryPrice - sl) / pip
+rewardPips  = na(entryPrice) or na(tp) ? na : math.abs(tp - entryPrice) / pip
+rrActual    = na(riskPips) or riskPips == 0 ? na : rewardPips / riskPips
+pnlPips     = na(entryPrice) ? na : (side == "BUY" ? (close - entryPrice) : (entryPrice - close)) / pip
+fmtPips(x)  => na(x) ? "-" : str.tostring(math.round(x, 1))
+fmtRR(x)    => na(x) ? "-" : str.tostring(math.round(x, 2))
+
+// Alerts
+instrument_id = str.replace_all(syminfo.ticker, "OANDA:", "")
+instrument_id := str.substring(instrument_id, 0, 3) + "_" + str.substring(instrument_id, 3, 6)
+timestamp = str.tostring(time, "yyyy-MM-dd HH:mm:ss")
+
+if triggerBuy and use5mAlerts
+    alert('{"message":"BUY","entry":' + str.tostring(close, format.mintick) +
+          ',"sl":' + str.tostring(sl, format.mintick) +
+          ',"tp":' + str.tostring(tp, format.mintick) +
+          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar_close)
+
+if triggerSell and use5mAlerts
+    alert('{"message":"SELL","entry":' + str.tostring(close, format.mintick) +
+          ',"sl":' + str.tostring(sl, format.mintick) +
+          ',"tp":' + str.tostring(tp, format.mintick) +
+          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar_close)
+
+// TP/SL alert pings
+estPnl = na(entryPrice) ? na : pnlPips * (syminfo.mintick * 10000) * (side == "BUY" ? 1 : -1)
+if tpHit and enableTpSlAlerts
+    alert('{"message":"TP","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
+if slHit and enableTpSlAlerts
+    alert('{"message":"SL","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
+
+// === Dock ===
+statusText  = buyState ? "BUY" : sellState ? "SELL" : waitText
+statusColor = buyState ? color.green : sellState ? color.red : color.gray
+rowCount = 10
+var table rightDock = na
+if na(rightDock) or barstate.isfirst
+    if not na(rightDock)
+        table.delete(rightDock)
+    rightDock := table.new(position.bottom_right, 7, rowCount, border_width=0)
+
+if barstate.islast
+    table.cell(rightDock, 0, 0, "Signal:", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 1, "TF", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 1, "Trend", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 1, "RSI", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 2, "4H", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 2, bullish_tf1 ? "↑ Bull" : bearish_tf1 ? "↓ Bear" : "→ Neutral", bgcolor=bullish_tf1 ? color.green : bearish_tf1 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 2, str.tostring(rsi_tf1, "#.##"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 3, "1H", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 3, bullish_tf2 ? "↑ Bull" : bearish_tf2 ? "↓ Bear" : "→ Neutral", bgcolor=bullish_tf2 ? color.green : bearish_tf2 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 3, str.tostring(rsi_tf2, "#.##"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 4, "5M", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 4, bullish_tf3 ? "↑ Bull" : bearish_tf3 ? "↓ Bear" : "→ Neutral", bgcolor=bullish_tf3 ? color.green : bearish_tf3 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 4, str.tostring(rsi_tf3, "#.##"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 5, "Side", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 5, "Entry", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 5, "SL", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 3, 5, "TP", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 4, 5, "Risk(p)", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 5, 5, "Rew(p)", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 6, 5, "RR|PnL", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 0, 6, (na(entryPrice) ? "None" : side), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 1, 6, str.tostring(entryPrice, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 2, 6, str.tostring(sl, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 3, 6, str.tostring(tp, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 4, 6, fmtPips(riskPips), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 5, 6, fmtPips(rewardPips), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+    table.cell(rightDock, 6, 6, fmtRR(rrActual) + " | " + fmtPips(pnlPips), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
+
+// === Bollinger Visualization (global + clean syntax) ===
+
+
+
+
+isBullZone = close >= basis
+isBearZone = close < basis
+
+// --- BB Lines ---
+plot(showBBVisual ? upper : na, "BB Upper", color=color.new(color.orange, 40), linewidth=1)
+plot(showBBVisual ? lower : na, "BB Lower", color=color.new(color.orange, 40), linewidth=1)
+plot(showBBVisual ? basis : na, "BB Basis", color=color.new(color.yellow, 0), linewidth=1)
+
+// --- Optional background highlight when touching bands ---
+touchUpper = showBBVisual and shadeBBTouches and high >= upper
+touchLower = showBBVisual and shadeBBTouches and low  <= lower
+bgcolor(touchUpper ? color.new(color.orange, bbShadeOpacity) : na)
+bgcolor(touchLower ? color.new(color.purple, bbShadeOpacity) : na)
+
+plotshape(reversalBuy,  title="Reversal Buy",  style=shape.triangleup,   color=color.new(color.teal, 0),   size=size.tiny, location=location.belowbar)
+plotshape(reversalSell, title="Reversal Sell", style=shape.triangledown, color=color.new(color.orange, 0), size=size.tiny, location=location.abovebar)
