@@ -2,7 +2,7 @@
 // © Orelious
 
 //@version=6
-indicator("PSv4.0)", overlay=true)
+indicator("PSv4.0", overlay=true)
 
 // === Inputs ===
 rsiLength        = input.int(14, "RSI Length")
@@ -411,9 +411,6 @@ if barstate.islast
 
 // === Bollinger Visualization (global + clean syntax) ===
 
-
-
-
 isBullZone = close >= basis
 isBearZone = close < basis
 
@@ -421,6 +418,8 @@ isBearZone = close < basis
 plot(showBBVisual ? upper : na, "BB Upper", color=color.new(color.orange, 40), linewidth=1)
 plot(showBBVisual ? lower : na, "BB Lower", color=color.new(color.orange, 40), linewidth=1)
 plot(showBBVisual ? basis : na, "BB Basis", color=color.new(color.yellow, 0), linewidth=1)
+plotshape(reversalBuy,  title="Reversal Buy",  style=shape.triangleup,   color=color.new(color.teal, 0),   size=size.tiny, location=location.belowbar)
+plotshape(reversalSell, title="Reversal Sell", style=shape.triangledown, color=color.new(color.orange, 0), size=size.tiny, location=location.abovebar)
 
 // --- Optional background highlight when touching bands ---
 touchUpper = showBBVisual and shadeBBTouches and high >= upper
@@ -428,5 +427,4 @@ touchLower = showBBVisual and shadeBBTouches and low  <= lower
 bgcolor(touchUpper ? color.new(color.orange, bbShadeOpacity) : na)
 bgcolor(touchLower ? color.new(color.purple, bbShadeOpacity) : na)
 
-plotshape(reversalBuy,  title="Reversal Buy",  style=shape.triangleup,   color=color.new(color.teal, 0),   size=size.tiny, location=location.belowbar)
-plotshape(reversalSell, title="Reversal Sell", style=shape.triangledown, color=color.new(color.orange, 0), size=size.tiny, location=location.abovebar)
+
