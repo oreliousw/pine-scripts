@@ -2,7 +2,7 @@
 // © Orelious
 
 //@version=6
-indicator("PSv3.38 (BB Flex Visual)", overlay=true)
+indicator("PSv3.39)", overlay=true)
 
 // === Inputs ===
 rsiLength        = input.int(14, "RSI Length")
