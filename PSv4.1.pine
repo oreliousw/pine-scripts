@@ -296,10 +296,9 @@ if not tradeActive and minAtrFilter
         dist = close - swingLowPrev
         tradeSL := dist >= minSlPips * pip ? swingLowPrev : close - minSlPips * pip
     else
-    ...
-
-            dist = atrVal * atrMult
-            tradeSL := close - math.max(dist, minSlPips * pip)
+    
+        dist = atrVal * atrMult
+        tradeSL := close - math.max(dist, minSlPips * pip)
         tradeTP := close + dynamicRR * (close - tradeSL)
         newTradeLong := true
 
@@ -307,14 +306,13 @@ if not tradeActive and minAtrFilter
         tradeActive := true
         tradeSide   := "SELL"
         tradeEntry  := close
-        if slMethod == "Swing"
+    if slMethod == "Swing"
         dist = swingHighPrev - close
         tradeSL := dist >= minSlPips * pip ? swingHighPrev : close + minSlPips * pip
     else
-    ...
-
-            dist = atrVal * atrMult
-            tradeSL := close + math.max(dist, minSlPips * pip)
+    
+        dist = atrVal * atrMult
+        tradeSL := close + math.max(dist, minSlPips * pip)
         tradeTP := close - dynamicRR * (tradeSL - close)
         newTradeShort := true
 
