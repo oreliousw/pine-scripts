@@ -20,7 +20,7 @@ f_toSize(opt) => opt == "Tiny" ? size.tiny : opt == "Small" ? size.small : opt =
 dockTextSizeOpt = input.string("Small", "Dock Text Size", options=["Tiny","Small","Normal","Large"])
 dockTextSize    = f_toSize(dockTextSizeOpt)
 
-// RSI Thresholds & Presets
+// RSI Thresholds
 rsiBuyLevel  = input.int(60, "RSI Buy Threshold (<)")
 rsiSellLevel = input.int(40, "RSI Sell Threshold (>)")
 
@@ -98,7 +98,7 @@ bullish_tf2 = useEMAFilter ? (src_tf2 > sma_tf2 and src_tf2 > ema_tf2) : src_tf2
 bullish_tf3 = useEMAFilter ? (src_tf3 > sma_tf3 and src_tf3 > ema_tf3) : src_tf3 > sma_tf3
 bearish_tf1 = useEMAFilter ? (src_tf1 < sma_tf1 and src_tf1 < ema_tf1) : src_tf1 < sma_tf1
 bearish_tf2 = useEMAFilter ? (src_tf2 < sma_tf2 and src_tf2 < ema_tf2) : src_tf2 < sma_tf2
-bearish_tf3 = useEMAFilter ? (src_tf3 < sma_tf3 and src_tf3 > ema_tf3) : src_tf3 < sma_tf3
+bearish_tf3 = useEMAFilter ? (src_tf3 < sma_tf3 and src_tf3 < ema_tf3) : src_tf3 < sma_tf3  // ← fixed <ema
 
 allBullish = bullish_tf1 and bullish_tf2 and bullish_tf3
 allBearish = bearish_tf1 and bearish_tf2 and bearish_tf3
@@ -163,7 +163,7 @@ bgcolor(newYorkSession ? nyColor : na)
 // Helper color
 fColor(on) => on ? color.green : color.red
 
-// Pip helper (must be defined before use)
+// Pip helper
 f_pip() =>
     mt = syminfo.mintick
     mt == 0.00001 ? 0.0001 : mt == 0.001 ? 0.01 : mt
@@ -203,12 +203,11 @@ else
     reversalBuy  := false
     reversalSell := false
 
-// === BUY (flex + reversal) ===
+// BUY (flex + reversal)
 baseBuyFlex = allBullish and (rsi_tf3 < rsiBuyLevel or rsi_tf3 < (rsiBuyLevel - rsiFlexOffset))
 buyRaw = ((baseBuyFlex and htfConfirmBuy and (not useVolumeFilter or volumeSpike) and (not useMACDFilter or macdBullish) and (not useSRFilter or nearSupport) and (not useCandleFilter or candleBullish) and (not useBBFilter or bbBullish) and inSession and pairFilterBuy) or strongBullCandle or reversalBuy)
-    
 
-// === SELL (flex + reversal) ===
+// SELL (flex + reversal)
 baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > (rsiSellLevel + rsiFlexOffset) or rsi_tf3 > rsiSellFlex)
 sellRaw = ((baseSellFlex and htfConfirmSell and (not useVolumeFilter or volumeSpike) and (not useMACDFilter or macdBearish) and (not useSRFilter or nearResistance) and (not useCandleFilter or candleBearish) and (not useBBFilter or bbBearish) and inSession and pairFilterSell) or strongBearCandle or reversalSell)
 
@@ -263,53 +262,29 @@ else if highVol
 else if isJpyPair and not useJpyPairs
     waitText := "WAIT: JPY Pair Excluded"
 
-// === SL/TP Engine + 🧠 Active Trade Lock System ===
-// Swing/ATR bases
+// === SL/TP Engine + Active Trade Lock ===
 swingLowSeries  = ta.lowest(low,  swingLen)
 swingHighSeries = ta.highest(high, swingLen)
 
-// Persistent trade memory
+// persistent trade state
 var bool  tradeActive = false
 var string tradeSide   = ""
 var float tradeEntry   = na
 var float tradeSL      = na
 var float tradeTP      = na
 
-// New-trade fired flags (for alerts)
+// new-trade flags (for alerts)
 var bool newTradeLong  = false
 var bool newTradeShort = false
 
 // Minimum ATR guard (skip tiny ranges)
 minAtrFilter = atrVal > ta.sma(atrVal, 20) * 0.8
 
-    if triggerBuy
-        tradeActive := true
-        tradeSide   := "BUY"
-        tradeEntry  := close
-        if slMethod == "Swing"
-            dist = close - swingLow
-            tradeSL := dist >= minSlPips * pip ? swingLow : close - minSlPips * pip
-        else
-            dist = atrVal * atrMult
-            tradeSL := close - math.max(dist, minSlPips * pip)
-        tradeTP := close + dynamicRR * (close - tradeSL)
-        newTradeLong := true
-    if triggerSell
-        tradeActive := true
-        tradeSide   := "SELL"
-        tradeEntry  := close
-        if slMethod == "Swing"
-            dist = swingHigh - close
-            tradeSL := dist >= minSlPips * pip ? swingHigh : close + minSlPips * pip
-        else
-            dist = atrVal * atrMult
-            tradeSL := close + math.max(dist, minSlPips * pip)
-        tradeTP := close - dynamicRR * (tradeSL - close)
-        newTradeShort := true
-        
 // Compute & arm trades only when not active
 if not tradeActive and minAtrFilter
-    pip = f_pip()
+    newTradeLong  := false
+    newTradeShort := false
+
     if triggerBuy
         tradeActive := true
         tradeSide   := "BUY"
@@ -323,6 +298,7 @@ if not tradeActive and minAtrFilter
             tradeSL := close - math.max(dist, minSlPips * pip)
         tradeTP := close + dynamicRR * (close - tradeSL)
         newTradeLong := true
+
     if triggerSell
         tradeActive := true
         tradeSide   := "SELL"
@@ -378,12 +354,7 @@ if newTradeLong
 if newTradeShort
     label.new(bar_index, low,  "SELL", color=color.red,   style=label.style_label_up,   textcolor=color.white)
 
-// Auto-clear (visual only)
-if autoClear and (tpHit or slHit)
-    // nothing to do; trade vars reset above
-    na
-
-// Risk/Reward & PnL snapshot for dock
+// Risk/Reward & PnL (for dock)
 riskPips    = na(tradeEntry) or na(tradeSL) ? na : math.abs(tradeEntry - tradeSL) / pip
 rewardPips  = na(tradeEntry) or na(tradeTP) ? na : math.abs(tradeTP - tradeEntry) / pip
 rrActual    = na(riskPips) or riskPips == 0 ? na : rewardPips / riskPips
