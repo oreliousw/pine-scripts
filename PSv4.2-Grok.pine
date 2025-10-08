@@ -135,6 +135,11 @@ driftOk   = driftPips <= maxDriftPips
 buyRaw  = (baseBuy or flexBuy) and htfConfirmBuy and coreBuyOk and (not useBBFilter or bbBullish) and inSession and pairFilter and driftOk
 sellRaw = (baseSell or flexSell) and htfConfirmSell and coreSellOk and (not useBBFilter or bbBearish) and inSession and pairFilter and driftOk
 
+// Prevent dual signals
+if buyRaw and sellRaw
+    buyRaw := false
+    sellRaw := false
+
 triggerBuy  = buyRaw and (not useCloseOnly or barstate.isconfirmed)
 triggerSell = sellRaw and (not useCloseOnly or barstate.isconfirmed)
 
@@ -182,7 +187,7 @@ var float tradeTP = na
 var bool newTradeLong = false
 var bool newTradeShort = false
 
-if not tradeActive and minAtrFilter and (triggerBuy or triggerSell)
+if not tradeActive and minAtrFilter
     newTradeLong := false
     newTradeShort := false
     if triggerBuy
@@ -197,7 +202,7 @@ if not tradeActive and minAtrFilter and (triggerBuy or triggerSell)
             tradeSL := close - math.max(dist, minSlPips * pip)
         tradeTP := close + rr * (close - tradeSL)
         newTradeLong := true
-    if triggerSell
+    else if triggerSell
         tradeActive := true
         tradeSide := "SELL"
         tradeEntry := close
@@ -245,19 +250,29 @@ if tradeActive and not na(tradeSL)
 if tradeActive and not na(tradeTP)
     line.new(bar_index-1, tradeTP, bar_index, tradeTP, extend=extend.none, color=color.green, width=2, style=line.style_dashed)
 
+// Manual timestamp formatting to avoid potential str.tostring issues
+year_str = str.tostring(year(time))
+month_str = str.tostring(month(time), "00")
+day_str = str.tostring(dayofmonth(time), "00")
+hour_str = str.tostring(hour(time, "GMT"), "00")
+min_str = str.tostring(minute(time, "GMT"), "00")
+sec_str = str.tostring(second(time), "00")
+timestamp = year_str + "-" + month_str + "-" + day_str + " " + hour_str + ":" + min_str + ":" + sec_str
+
 // === Alerts ===
 instrument_id = str.replace_all(syminfo.ticker, "OANDA:", "")
 instrument_id := str.substring(instrument_id, 0, 3) + "_" + str.substring(instrument_id, 3, 6)
-timestamp = str.tostring(time, "yyyy-MM-dd HH:mm:ss")
 
 if use5mAlerts and newTradeLong and allowAlert
-    riskPips = math.abs(tradeEntry - tradeSL) / pip
-    alertmsg = '{"message":"BUY","entry":' + str.tostring(tradeEntry, format.mintick) + ',"sl":' + str.tostring(tradeSL, format.mintick) + ',"tp":' + str.tostring(tradeTP, format.mintick) + ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}'
+    entry_val = na(tradeEntry) ? close : tradeEntry  // Fallback to close if na
+    riskPips = math.abs(entry_val - tradeSL) / pip
+    alertmsg = '{"message":"BUY","entry":' + str.tostring(entry_val, format.mintick) + ',"sl":' + str.tostring(tradeSL, format.mintick) + ',"tp":' + str.tostring(tradeTP, format.mintick) + ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}'
     alert(alertmsg, alert.freq_once_per_bar_close)
 
 if use5mAlerts and newTradeShort and allowAlert
-    riskPips = math.abs(tradeSL - tradeEntry) / pip
-    alertmsg = '{"message":"SELL","entry":' + str.tostring(tradeEntry, format.mintick) + ',"sl":' + str.tostring(tradeSL, format.mintick) + ',"tp":' + str.tostring(tradeTP, format.mintick) + ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}'
+    entry_val = na(tradeEntry) ? close : tradeEntry  // Fallback to close if na
+    riskPips = math.abs(tradeSL - entry_val) / pip
+    alertmsg = '{"message":"SELL","entry":' + str.tostring(entry_val, format.mintick) + ',"sl":' + str.tostring(tradeSL, format.mintick) + ',"tp":' + str.tostring(tradeTP, format.mintick) + ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}'
     alert(alertmsg, alert.freq_once_per_bar_close)
 
 estPnl = na(tradeEntry) ? 0 : (tradeSide == "BUY" ? (close - tradeEntry) : (tradeEntry - close)) / pip
