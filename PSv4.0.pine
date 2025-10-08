@@ -291,7 +291,6 @@ minAtrFilter = atrVal > ta.sma(atrVal, 20) * 0.8
 if triggerBuy and minAtrFilter
     entryPrice := close
     rawSl = slMethod == "Swing" ? swingLowSeries : close - atrVal * atrMult
-    // use larger of ATR×1.2 or min pip distance
     sl := close - math.max(atrVal * 1.2, minSlPips * pip)
     tp := close + rr * (close - sl)
     side := "BUY"
@@ -306,9 +305,10 @@ if triggerSell and minAtrFilter
 // --- Trailing SL ---
 if useTrailing and not na(entryPrice) and side != ""
     trailDistance = atrVal * trailMult
-    currentRR = na(entryPrice) or na(sl) ? 0 : side == "BUY" ? 
-        (close - entryPrice) / (entryPrice - sl) : 
-        (entryPrice - close) / (sl - entryPrice)
+    currentRR = na(entryPrice) or na(sl) ? 0 : (
+        side == "BUY" ? (close - entryPrice) / (entryPrice - sl)
+                      : (entryPrice - close) / (sl - entryPrice)
+    )
     if currentRR >= trailActivate
         if side == "BUY"
             newSl = close - trailDistance
@@ -320,17 +320,24 @@ if useTrailing and not na(entryPrice) and side != ""
 // --- Dashed TP/SL for visibility ---
 var line slLine = na
 var line tpLine = na
+
 if barstate.isnew
     if not na(slLine)
-        line.delete(slLine), slLine := na
+        line.delete(slLine)
+        slLine := na
     if not na(tpLine)
-        line.delete(tpLine), tpLine := na
+        line.delete(tpLine)
+        tpLine := na
+
 if not na(sl)
-    slLine := line.new(bar_index-1, sl, bar_index, sl,
-        extend=extend.none, color=color.red, width=2, style=line.style_dashed)
+    slLine := line.new(
+        bar_index - 1, sl, bar_index, sl,
+        extend = extend.none, color = color.red, width = 2, style = line.style_dashed)
+
 if not na(tp)
-    tpLine := line.new(bar_index-1, tp, bar_index, tp,
-        extend=extend.none, color=color.green, width=2, style=line.style_dashed)
+    tpLine := line.new(
+        bar_index - 1, tp, bar_index, tp,
+        extend = extend.none, color = color.green, width = 2, style = line.style_dashed)
 
 // Signal labels
 if triggerBuy
