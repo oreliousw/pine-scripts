@@ -98,7 +98,7 @@ bullish_tf2 = useEMAFilter ? (src_tf2 > sma_tf2 and src_tf2 > ema_tf2) : src_tf2
 bullish_tf3 = useEMAFilter ? (src_tf3 > sma_tf3 and src_tf3 > ema_tf3) : src_tf3 > sma_tf3
 bearish_tf1 = useEMAFilter ? (src_tf1 < sma_tf1 and src_tf1 < ema_tf1) : src_tf1 < sma_tf1
 bearish_tf2 = useEMAFilter ? (src_tf2 < sma_tf2 and src_tf2 < ema_tf2) : src_tf2 < sma_tf2
-bearish_tf3 = useEMAFilter ? (src_tf3 < sma_tf3 and src_tf3 < ema_tf3) : src_tf3 < sma_tf3
+bearish_tf3 = useEMAFilter ? (src_tf3 < sma_tf3 and src_tf3 > ema_tf3) : src_tf3 < sma_tf3
 
 allBullish = bullish_tf1 and bullish_tf2 and bullish_tf3
 allBearish = bearish_tf1 and bearish_tf2 and bearish_tf3
@@ -203,39 +203,14 @@ else
     reversalBuy  := false
     reversalSell := false
 
-// BUY (flex + reversal)
+// === BUY (flex + reversal) ===
 baseBuyFlex = allBullish and (rsi_tf3 < rsiBuyLevel or rsi_tf3 < (rsiBuyLevel - rsiFlexOffset))
+buyRaw = ((baseBuyFlex and htfConfirmBuy and (not useVolumeFilter or volumeSpike) and (not useMACDFilter or macdBullish) and (not useSRFilter or nearSupport) and (not useCandleFilter or candleBullish) and (not useBBFilter or bbBullish) and inSession and pairFilterBuy) or strongBullCandle or reversalBuy)
+    
 
-buyRaw = (
-     (baseBuyFlex and htfConfirmBuy and 
-      (not useVolumeFilter or volumeSpike) and 
-      (not useMACDFilter or macdBullish) and 
-      (not useSRFilter or nearSupport) and 
-      (not useCandleFilter or candleBullish) and 
-      (not useBBFilter or bbBullish) and 
-      inSession and pairFilterBuy)
-      or strongBullCandle
-      or reversalBuy
-)
-
-// SELL (flex + reversal)
-baseSellFlex = multiTfBear and (
-     rsi_tf3 > rsiSellLevel or 
-     rsi_tf3 > (rsiSellLevel + rsiFlexOffset) or 
-     rsi_tf3 > rsiSellFlex
-)
-
-sellRaw = (
-     (baseSellFlex and htfConfirmSell and 
-      (not useVolumeFilter or volumeSpike) and 
-      (not useMACDFilter or macdBearish) and 
-      (not useSRFilter or nearResistance) and 
-      (not useCandleFilter or candleBearish) and 
-      (not useBBFilter or bbBearish) and 
-      inSession and pairFilterSell)
-      or strongBearCandle
-      or reversalSell
-)
+// === SELL (flex + reversal) ===
+baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > (rsiSellLevel + rsiFlexOffset) or rsi_tf3 > rsiSellFlex)
+sellRaw = ((baseSellFlex and htfConfirmSell and (not useVolumeFilter or volumeSpike) and (not useMACDFilter or macdBearish) and (not useSRFilter or nearResistance) and (not useCandleFilter or candleBearish) and (not useBBFilter or bbBearish) and inSession and pairFilterSell) or strongBearCandle or reversalSell)
 
 // Legacy flags + state (for dock)
 newBuy  = buyRaw
@@ -307,24 +282,58 @@ var bool newTradeShort = false
 // Minimum ATR guard (skip tiny ranges)
 minAtrFilter = atrVal > ta.sma(atrVal, 20) * 0.8
 
-// Compute & arm trades only when not active
-if not tradeActive and minAtrFilter
     if triggerBuy
         tradeActive := true
         tradeSide   := "BUY"
         tradeEntry  := close
-        baseSL = slMethod == "Swing" ? swingLowSeries : close - atrVal * atrMult
-        tradeSL := close - math.max(atrVal * 1.2, minSlPips * pip)
-        tradeSL := math.min(tradeSL, close - pip * 0.1)  // ensure SL < entry
+        if slMethod == "Swing"
+            dist = close - swingLow
+            tradeSL := dist >= minSlPips * pip ? swingLow : close - minSlPips * pip
+        else
+            dist = atrVal * atrMult
+            tradeSL := close - math.max(dist, minSlPips * pip)
         tradeTP := close + dynamicRR * (close - tradeSL)
         newTradeLong := true
     if triggerSell
         tradeActive := true
         tradeSide   := "SELL"
         tradeEntry  := close
-        baseSL = slMethod == "Swing" ? swingHighSeries : close + atrVal * atrMult
-        tradeSL := close + math.max(atrVal * 1.2, minSlPips * pip)
-        tradeSL := math.max(tradeSL, close + pip * 0.1)  // ensure SL > entry
+        if slMethod == "Swing"
+            dist = swingHigh - close
+            tradeSL := dist >= minSlPips * pip ? swingHigh : close + minSlPips * pip
+        else
+            dist = atrVal * atrMult
+            tradeSL := close + math.max(dist, minSlPips * pip)
+        tradeTP := close - dynamicRR * (tradeSL - close)
+        newTradeShort := true
+        
+// Compute & arm trades only when not active
+if not tradeActive and minAtrFilter
+    pip = f_pip()
+    if triggerBuy
+        tradeActive := true
+        tradeSide   := "BUY"
+        tradeEntry  := close
+        if slMethod == "Swing"
+            swingLow = ta.lowest(low[1], swingLen)
+            dist = close - swingLow
+            tradeSL := dist >= minSlPips * pip ? swingLow : close - minSlPips * pip
+        else
+            dist = atrVal * atrMult
+            tradeSL := close - math.max(dist, minSlPips * pip)
+        tradeTP := close + dynamicRR * (close - tradeSL)
+        newTradeLong := true
+    if triggerSell
+        tradeActive := true
+        tradeSide   := "SELL"
+        tradeEntry  := close
+        if slMethod == "Swing"
+            swingHigh = ta.highest(high[1], swingLen)
+            dist = swingHigh - close
+            tradeSL := dist >= minSlPips * pip ? swingHigh : close + minSlPips * pip
+        else
+            dist = atrVal * atrMult
+            tradeSL := close + math.max(dist, minSlPips * pip)
         tradeTP := close - dynamicRR * (tradeSL - close)
         newTradeShort := true
 
@@ -388,16 +397,12 @@ instrument_id := str.substring(instrument_id, 0, 3) + "_" + str.substring(instru
 timestamp = str.tostring(time, "yyyy-MM-dd HH:mm:ss")
 
 if use5mAlerts and newTradeLong and allowAlert
-    alert('{"message":"BUY","entry":' + str.tostring(tradeEntry, format.mintick) +
-          ',"sl":' + str.tostring(tradeSL, format.mintick) +
-          ',"tp":' + str.tostring(tradeTP, format.mintick) +
-          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar_close)
+    alertmsg = '{"message":"BUY","entry":' + str.tostring(tradeEntry, format.mintick) + ',"sl":' + str.tostring(tradeSL, format.mintick) + ',"tp":' + str.tostring(tradeTP, format.mintick) + ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}'
+    alert(alertmsg, alert.freq_once_per_bar_close)
 
 if use5mAlerts and newTradeShort and allowAlert
-    alert('{"message":"SELL","entry":' + str.tostring(tradeEntry, format.mintick) +
-          ',"sl":' + str.tostring(tradeSL, format.mintick) +
-          ',"tp":' + str.tostring(tradeTP, format.mintick) +
-          ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}', alert.freq_once_per_bar_close)
+    alertmsg = '{"message":"SELL","entry":' + str.tostring(tradeEntry, format.mintick) + ',"sl":' + str.tostring(tradeSL, format.mintick) + ',"tp":' + str.tostring(tradeTP, format.mintick) + ',"instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","risk_pips":' + str.tostring(riskPips, "#.#") + '}'
+    alert(alertmsg, alert.freq_once_per_bar_close)
 
 // Optional TP/SL hit alerts (est PnL)
 estPips = pnlPips
