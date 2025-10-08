@@ -264,6 +264,11 @@ else if isJpyPair and not useJpyPairs
 swingLowSeries  = ta.lowest(low,  swingLen)
 swingHighSeries = ta.highest(high, swingLen)
 
+// Use previous-bar swings, precomputed every bar (avoids conditional calls)
+swingLowPrev  = ta.lowest(low[1],  swingLen)
+swingHighPrev = ta.highest(high[1], swingLen)
+
+
 // persistent trade state
 var bool  tradeActive = false
 var string tradeSide   = ""
@@ -287,11 +292,12 @@ if not tradeActive and minAtrFilter
         tradeActive := true
         tradeSide   := "BUY"
         tradeEntry  := close
-        if slMethod == "Swing"
-            swingLow = ta.lowest(low[1], swingLen)
-            dist = close - swingLow
-            tradeSL := dist >= minSlPips * pip ? swingLow : close - minSlPips * pip
-        else
+    if slMethod == "Swing"
+        dist = close - swingLowPrev
+        tradeSL := dist >= minSlPips * pip ? swingLowPrev : close - minSlPips * pip
+    else
+    ...
+
             dist = atrVal * atrMult
             tradeSL := close - math.max(dist, minSlPips * pip)
         tradeTP := close + dynamicRR * (close - tradeSL)
@@ -302,10 +308,11 @@ if not tradeActive and minAtrFilter
         tradeSide   := "SELL"
         tradeEntry  := close
         if slMethod == "Swing"
-            swingHigh = ta.highest(high[1], swingLen)
-            dist = swingHigh - close
-            tradeSL := dist >= minSlPips * pip ? swingHigh : close + minSlPips * pip
-        else
+        dist = swingHighPrev - close
+        tradeSL := dist >= minSlPips * pip ? swingHighPrev : close + minSlPips * pip
+    else
+    ...
+
             dist = atrVal * atrMult
             tradeSL := close + math.max(dist, minSlPips * pip)
         tradeTP := close - dynamicRR * (tradeSL - close)
