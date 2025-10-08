@@ -202,35 +202,26 @@ atrForMomentum   = ta.atr(14)
 strongBullCandle = useMomentumCandle and close > open and (close - open) > atrForMomentum * 0.5
 strongBearCandle = useMomentumCandle and close < open and (open - close) > atrForMomentum * 0.5
 
-// === BUY (flex + reversal) ===
+// BUY (flex)
 baseBuyFlex = allBullish and (rsi_tf3 < rsiBuyLevel or rsi_tf3 < (rsiBuyLevel - rsiFlexOffset))
+buyRaw = (baseBuyFlex and htfConfirmBuy and 
+         (not useVolumeFilter or volumeSpike) and 
+         (not useMACDFilter or macdBullish) and 
+         (not useSRFilter or nearSupport) and 
+         (not useCandleFilter or candleBullish) and 
+         (not useBBFilter or bbBullish) and 
+         inSession and pairFilterBuy) or strongBullCandle
 
-buyRaw = (
-    (baseBuyFlex and htfConfirmBuy and
-     (not useVolumeFilter or volumeSpike) and
-     (not useMACDFilter or macdBullish) and
-     (not useSRFilter or nearSupport) and
-     (not useCandleFilter or candleBullish) and
-     (not useBBFilter or bbBullish) and
-     inSession and pairFilterBuy)
-     or strongBullCandle
-     or reversalBuy  // 👈 added reversal logic here
-)
-
-// === SELL (flex + reversal) ===
+// SELL (flex)
 baseSellFlex = multiTfBear and (rsi_tf3 > rsiSellLevel or rsi_tf3 > (rsiSellLevel + rsiFlexOffset) or rsi_tf3 > rsiSellFlex)
+sellRaw = (baseSellFlex and htfConfirmSell and 
+          (not useVolumeFilter or volumeSpike) and 
+          (not useMACDFilter or macdBearish) and 
+          (not useSRFilter or nearResistance) and 
+          (not useCandleFilter or candleBearish) and 
+          (not useBBFilter or bbBearish) and 
+          inSession and pairFilterSell) or strongBearCandle
 
-sellRaw = (
-    (baseSellFlex and htfConfirmSell and
-     (not useVolumeFilter or volumeSpike) and
-     (not useMACDFilter or macdBearish) and
-     (not useSRFilter or nearResistance) and
-     (not useCandleFilter or candleBearish) and
-     (not useBBFilter or bbBearish) and
-     inSession and pairFilterSell)
-     or strongBearCandle
-     or reversalSell  // 👈 added reversal logic here
-)
 // Legacy flags + state
 newBuy  = buyRaw
 newSell = sellRaw
@@ -435,5 +426,6 @@ touchUpper = showBBVisual and shadeBBTouches and high >= upper
 touchLower = showBBVisual and shadeBBTouches and low  <= lower
 bgcolor(touchUpper ? color.new(color.orange, bbShadeOpacity) : na)
 bgcolor(touchLower ? color.new(color.purple, bbShadeOpacity) : na)
+
 
 
