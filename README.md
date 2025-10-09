@@ -88,6 +88,62 @@ TP / SL alerts also emit:
 
 ### 📞 Changelog (v3.3 → v4.3)
 
+| Version         | Major Changes                                                            |
+| --------------- | ------------------------------------------------------------------------ |
+| **v3.3**        | Base dock panel + JSON alerts                                            |
+| **v3.4 – v3.7** | ATR SL/TP logic + OANDA sync                                             |
+| **v3.9**        | Bollinger + Reversal structure                                           |
+| **v4.0**        | Unified reversal engine (EMA option)                                     |
+| **v4.1**        | ATR Guard + Active Trade Lock                                            |
+| **v4.2**        | Slim rewrite + clean alert structure                                     |
+| **v4.3**        | ✫ Adaptive RR · Alert Spacing · Symmetrical Trend Filter · Timestamp fix |
+
+---
+
+### ⚙️ **Core Tuning Guide**
+
+| Category            | Setting                  | Typical Range                                                        | Effect on Trade Frequency / Quality |
+| ------------------- | ------------------------ | -------------------------------------------------------------------- | ----------------------------------- |
+| **RSI Sensitivity** | `rsiLength` 7–16         | Lower = faster signals (more noise). Higher = cleaner fewer signals. |                                     |
+| **Trend Strength**  | `maLength` 20–50         | Shorter = quicker 5M entries; longer = smoother.                     |                                     |
+| **Trend Mode**      | `Strict (3)` vs `2-of-3` | Strict = strong confirmation, fewer signals.                         |                                     |
+| **Flex Reversal**   | `rsiOffset` 3–8          | Wider offset = more reversal catch potential.                        |                                     |
+| **ATR Multiplier**  | 1.0 – 2.5                | Wider stops reduce whips; tighter increase frequency.                |                                     |
+| **Risk Reward**     | 1.5 – 3.0                | Higher RR = fewer TPs, larger wins.                                  |                                     |
+| **Adaptive RR**     | `rrTightFactor 0.75`     | Tightens TP when ATR > 2× avgATR.                                    |                                     |
+| **Trailing Stop**   | `trailActivate 0.5`      | Activates after halfway to target.                                   |                                     |
+| **Core Filters**    | toggle                   | Disable for testing pure trend.                                      |                                     |
+| **Alert Spacing**   | 5 – 15 pips              | Raise to reduce noise; lower for faster reactivity.                  |                                     |
+
+#### 🎯 Suggested Profiles
+
+| Style            | Example Settings                                                 | Behavior                                |
+| ---------------- | ---------------------------------------------------------------- | --------------------------------------- |
+| **Scalper**      | RSI 7 · MA 20 · `2-of-3` · ATR 1.2 · RR 1.5 · Alert 5 pips       | High frequency signals, tight targets.  |
+| **Swing**        | RSI 14 · MA 50 · `2-of-3` · ATR 1.5 · RR 2.0 · Alert 10 pips     | Balanced mix of frequency and accuracy. |
+| **Trend Holder** | RSI 16 · MA 50 · `Strict (3)` · ATR 2.0 · RR 2.5 · Alert 15 pips | Conservative entries, longer holds.     |
+
+---
+
+### 🤖 Before Live Run Checklist
+
+* ✅ Verify OANDA webhook URL in alert settings.
+* ✅ Match timeframes (4H/1H/5M) in inputs.
+* ✅ Enable `useAlertThreshold` to prevent duplicate signals.
+* ✅ Check for “BUY” / “SELL” alerts firing with valid JSON fields.
+
+---
+
+**Author:** Orelious (“Mr O”)
+**License:** MPL 2.0
+**Repo:** [`oreliousw/pine-scripts`](https://github.com/oreliousw/pine-scripts)
+
+---
+
+*“Yukkuri daijōbu” — take it slow, it’s okay ✈️*
+
+### 📞 Changelog (v3.3 → v4.3)
+
 | Version  | Major Changes          |
 | -------- | ---------------------- |
 | **v3.3** | Base dock panel + JSON |
