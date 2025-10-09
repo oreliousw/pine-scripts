@@ -1,6 +1,6 @@
 // © Orelious
 //@version=6
-indicator("PSv4.2-Grok)", overlay=true)
+indicator("PSv4.2-Grok", overlay=true)
 
 // === Consolidated Inputs ===
 rsiLength      = input.int(14, "RSI Length")
