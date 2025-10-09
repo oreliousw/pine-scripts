@@ -46,11 +46,6 @@ bbLength       = input.int(20, "BB Length")
 bbMult         = input.float(2.0, "BB Mult")
 showBB         = input.bool(true, "Show BB?")
 
-// UI
-dockSizeOpt    = input.string("Small", "Dock Size", options=["Tiny","Small","Normal","Large"])
-f_toSize(opt) => opt == "Tiny" ? size.tiny : opt == "Small" ? size.small : opt == "Large" ? size.large : size.normal
-dockTextSize   = f_toSize(dockSizeOpt)
-
 // TF (fixed, but optional alignment strictness)
 tf1 = "240"  // 4H
 tf2 = "60"   // 1H
@@ -282,7 +277,6 @@ if enableTpSlAlerts and tpHit
     alert('{"message":"TP","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl_pips":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
 if enableTpSlAlerts and slHit
     alert('{"message":"SL","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl_pips":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
-
 
 // === Plots ===
 plot(showBB ? upper : na, "BB Upper", color=color.new(color.orange, 40))
