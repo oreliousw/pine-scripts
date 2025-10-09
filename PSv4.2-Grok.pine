@@ -1,6 +1,6 @@
 // © Orelious
 //@version=6
-indicator("PSv4.2 (Slimmed: ATR Guarded + Active Trade Lock)", overlay=true)
+indicator("PSv4.2-Grok)", overlay=true)
 
 // === Consolidated Inputs ===
 rsiLength      = input.int(14, "RSI Length")
@@ -79,13 +79,13 @@ ema_tf1 = ta.ema(src_tf1, emaLength)
 ema_tf2 = ta.ema(src_tf2, emaLength)
 ema_tf3 = ta.ema(src_tf3, emaLength)
 
-// Trends (consolidated EMA optional)
-bullish_tf1 = src_tf1 > sma_tf1 and (not useEMA or src_tf1 > ema_tf1)
-bullish_tf2 = src_tf2 > sma_tf2 and (not useEMA or src_tf2 > ema_tf2)
-bullish_tf3 = src_tf3 > sma_tf3 and (not useEMA or src_tf3 > ema_tf3)
-bearish_tf1 = src_tf1 < sma_tf1 and (not useEMA or src_tf1 < ema_tf1)
-bearish_tf2 = src_tf2 < sma_tf2 and (not useEMA or src_tf2 < ema_tf2)
-bearish_tf3 = src_tf3 < sma_tf3 and (not useEMA or src_tf3 < ema_tf3)
+// Trends (consolidated EMA optional) - with NaN guards
+bullish_tf1 = not na(src_tf1) and not na(sma_tf1) and src_tf1 > sma_tf1 and (not useEMA or (not na(ema_tf1) and src_tf1 > ema_tf1))
+bearish_tf1 = not na(src_tf1) and not na(sma_tf1) and src_tf1 < sma_tf1 and (not useEMA or (not na(ema_tf1) and src_tf1 < ema_tf1))
+bullish_tf2 = not na(src_tf2) and not na(sma_tf2) and src_tf2 > sma_tf2 and (not useEMA or (not na(ema_tf2) and src_tf2 > ema_tf2))
+bearish_tf2 = not na(src_tf2) and not na(sma_tf2) and src_tf2 < sma_tf2 and (not useEMA or (not na(ema_tf2) and src_tf2 < ema_tf2))
+bullish_tf3 = not na(src_tf3) and not na(sma_tf3) and src_tf3 > sma_tf3 and (not useEMA or (not na(ema_tf3) and src_tf3 > ema_tf3))
+bearish_tf3 = not na(src_tf3) and not na(sma_tf3) and src_tf3 < sma_tf3 and (not useEMA or (not na(ema_tf3) and src_tf3 < ema_tf3))
 
 allBullish = bullish_tf1 and bullish_tf2 and bullish_tf3
 tfBearCount = (bearish_tf1 ? 1 : 0) + (bearish_tf2 ? 1 : 0) + (bearish_tf3 ? 1 : 0)
@@ -100,8 +100,8 @@ flexBuy  = useFlexMode and (rsiBuyCross or (rsi_tf3 < rsiBuyLevel - rsiOffset))
 flexSell = useFlexMode and (rsiSellCross or (rsi_tf3 > rsiSellLevel + rsiOffset))
 
 // Confirmations
-htfConfirmBuy  = not useHtfConfirm or rsi_tf1 < htfRsiThresh
-htfConfirmSell = not useHtfConfirm or rsi_tf1 > htfRsiThresh
+htfConfirmBuy  = not useHtfConfirm or (not na(rsi_tf1) and rsi_tf1 < htfRsiThresh)
+htfConfirmSell = not useHtfConfirm or (not na(rsi_tf1) and rsi_tf1 > htfRsiThresh)
 isJpyPair      = str.contains(syminfo.ticker, "JPY")
 pairFilter     = not isJpyPair or useJpyPairs
 inSession      = not useSession or not na(time(timeframe.period, "0800-2200", "GMT"))
@@ -153,7 +153,9 @@ else if sellRaw
     buyState := false
 
 waitText = "WAIT"
-if not inSession
+if na(src_tf1) or na(src_tf2) or na(src_tf3) or na(rsi_tf3)
+    waitText := "Data N/A"
+else if not inSession
     waitText := "Outside Session"
 else if not allBullish and not allBearish
     waitText := "Mixed Trend"
@@ -281,34 +283,6 @@ if enableTpSlAlerts and tpHit
 if enableTpSlAlerts and slHit
     alert('{"message":"SL","instrument":"' + instrument_id + '","timestamp":"' + timestamp + '","est_pnl_pips":' + str.tostring(estPnl, "#.##") + '}', alert.freq_once_per_bar_close)
 
-// === Simplified Dock ===
-statusText = tradeActive ? tradeSide : (buyState ? "BUY" : sellState ? "SELL" : waitText)
-statusColor= tradeActive ? (tradeSide == "BUY" ? color.green : color.red) : (buyState ? color.green : sellState ? color.red : color.gray)
-var table dock = na
-if barstate.islast and na(dock) or barstate.isfirst
-    if not na(dock)
-        table.delete(dock)
-    dock := table.new(position.bottom_right, 3, 8, border_width=0)
-    table.cell(dock, 0, 0, "Signal", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 0, 1, "4H", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 1, 1, bullish_tf1 ? "Bull" : bearish_tf1 ? "Bear" : "Neu", bgcolor=bullish_tf1 ? color.green : bearish_tf1 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 2, 1, str.tostring(rsi_tf1, "#.#"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 0, 2, "1H", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 1, 2, bullish_tf2 ? "Bull" : bearish_tf2 ? "Bear" : "Neu", bgcolor=bullish_tf2 ? color.green : bearish_tf2 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 2, 2, str.tostring(rsi_tf2, "#.#"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 0, 3, "5M", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 1, 3, bullish_tf3 ? "Bull" : bearish_tf3 ? "Bear" : "Neu", bgcolor=bullish_tf3 ? color.green : bearish_tf3 ? color.red : color.gray, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 2, 3, str.tostring(rsi_tf3, "#.#"), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 0, 4, "Entry", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 1, 4, na(tradeEntry) ? "-" : str.tostring(tradeEntry, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 2, 4, na(tradeSL) ? "-" : str.tostring(tradeSL, format.mintick), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    riskPips = na(tradeEntry) ? na : math.abs(tradeEntry - tradeSL) / pip
-    rewPips  = na(tradeTP) ? na : math.abs(tradeTP - tradeEntry) / pip
-    pnlPips  = na(tradeEntry) ? na : (tradeSide == "BUY" ? close - tradeEntry : tradeEntry - close) / pip
-    table.cell(dock, 0, 5, "Risk/Rew", bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 1, 5, na(riskPips) ? "-" : str.tostring(math.round(riskPips)) + "/" + str.tostring(math.round(rewPips)), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
-    table.cell(dock, 2, 5, na(pnlPips) ? "-" : str.tostring(math.round(pnlPips)), bgcolor=color.black, text_color=color.white, text_size=dockTextSize)
 
 // === Plots ===
 plot(showBB ? upper : na, "BB Upper", color=color.new(color.orange, 40))
@@ -322,3 +296,8 @@ touchUpper = showBB and high >= upper
 touchLower = showBB and low <= lower
 bgcolor(touchUpper ? color.new(color.orange, 80) : na)
 bgcolor(touchLower ? color.new(color.purple, 80) : na)
+
+// Simple signal plot (optional debug)
+plotchar(buyRaw, "Buy Raw", "▲", location.belowbar, color.green, size=size.tiny)
+plotchar(sellRaw, "Sell Raw", "▼", location.abovebar, color.red, size=size.tiny)
+plotchar(tradeActive ? (tradeSide == "BUY" ? 1 : -1) : 0, "Trade Active", "", location.top, color=tradeActive ? (tradeSide == "BUY" ? color.green : color.red) : na)
