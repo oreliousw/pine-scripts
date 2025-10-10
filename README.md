@@ -169,3 +169,11 @@ TP / SL alerts also emit:
 | **Trailing Stop / Auto Clear** |                         6                        |                       8                      | Keeps alerts clean by resetting after TP/SL hits                    |
 | **Alert Threshold (Min Pips)** |                         5                        |                       8                      | Blocks duplicates near same price region                            |
 | **Bollinger Filter**           |                         4                        |                       8                      | Adds overextension control — slower but safer entries               |
+
+📊 Interpretation
+
+High frequency (8–10) → faster alerts, more noise.
+
+High accuracy (8–10) → fewer but higher-probability alerts.
+
+The sweet spot for 1 H use is keeping most filters ON and Flex Mode moderate — this yields about 65–75 % accuracy and 2–5 alerts per pair per day.
