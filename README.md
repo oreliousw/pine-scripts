@@ -147,3 +147,13 @@ TP / SL alerts also emit:
 | Version  | Major Changes          |
 | -------- | ---------------------- |
 | **v3.3** | Base dock panel + JSON |
+| Purpose              | Mini-Prompt                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 🔍 Fix compile error | “Here’s the TradingView compile error: [paste full error]. Fix only the cause — don’t change the JSON alert format.” |
+| 🧩 Add new feature   | “Add [feature] as optional input — disabled by default. Keep alert logic intact.”                                    |
+| 🗑️ Remove feature    | “Remove [feature] cleanly — ensure all related inputs, variables, and alert references are deleted without breaking compile.” |
+| 🧮 Tune parameters   | “Explain how changing RSI length from 14 → 7 affects signal frequency under current filters.”                        |
+| 🧱 Merge versions    | “Merge PSv3.36 and PSv3.4e keeping best logic from each. Keep alert JSON identical.”                                 |
+| 🧾 Create changelog  | “Generate a CHANGELOG.md entry for this Pine update (same format as my TVCHANGELOG).”                                |
+
+
