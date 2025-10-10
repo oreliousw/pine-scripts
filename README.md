@@ -157,3 +157,15 @@ TP / SL alerts also emit:
 | 🧾 Create changelog  | “Generate a CHANGELOG.md entry for this Pine update (same format as my TVCHANGELOG).”                                |
 
 
+| Setting / Toggle               | 🔔 Alert Frequency (1 = fewer alerts, 10 = more) | 🎯 Signal Accuracy (1 = noisy, 10 = precise) | Practical Effect                                                    |
+| ------------------------------ | :----------------------------------------------: | :------------------------------------------: | ------------------------------------------------------------------- |
+| **RSI / MA Length**            |                         8                        |                       6                      | Shorter lengths = more signals but more false triggers on 1 H bars  |
+| **Flex Mode (On)**             |                         7                        |                       6                      | Early entries within trend; useful for reversals but less confirmed |
+| **Trend Filter (4 H)**         |                         3                        |                       9                      | Strong directional confirmation reduces whipsaw alerts              |
+| **ATR / RR Settings**          |                         4                        |                       8                      | Wider stops = fewer alerts but higher completion rate               |
+| **Adaptive RR (Volatility)**   |                         5                        |                       7                      | Stabilizes risk/reward during volatile sessions                     |
+| **Core Filters (Vol/MACD/SR)** |                         4                        |                       9                      | Multi-factor confirmation — cuts false alerts ≈ 20 %                |
+| **Session / JPY Filters**      |                         5                        |                       8                      | Limits trades to high-liquidity hours and non-JPY pairs             |
+| **Trailing Stop / Auto Clear** |                         6                        |                       8                      | Keeps alerts clean by resetting after TP/SL hits                    |
+| **Alert Threshold (Min Pips)** |                         5                        |                       8                      | Blocks duplicates near same price region                            |
+| **Bollinger Filter**           |                         4                        |                       8                      | Adds overextension control — slower but safer entries               |
