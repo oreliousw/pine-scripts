@@ -1,6 +1,6 @@
-// © Orelious
+// (c) Orelious
 //@version=6
-indicator("PSv4.4-1hr (Clean Compile)", overlay = true)
+indicator("PSv4.4-1hr-Aligned (Clean Compile)", overlay = true)
 
 // ======================================================
 // === INPUTS: CORE SETTINGS ============================
@@ -8,7 +8,7 @@ indicator("PSv4.4-1hr (Clean Compile)", overlay = true)
 rsiLength        = input.int(14, "RSI Length")
 maLength         = input.int(50, "SMA Length (Trend)")
 useCloseOnly     = input.bool(true,  "Signals on Bar Close Only")
-use5mAlerts      = input.bool(true,  "Enable 1H Buy/Sell Alerts?")
+use1hAlerts      = input.bool(true,  "Enable 1H Buy/Sell Alerts?")
 enableTpSlAlerts = input.bool(false, "Enable TP/SL Hit Alerts?")
 
 // ======================================================
@@ -51,7 +51,7 @@ autoClear     = input.bool(true, "Clear Trade on Hit?")
 // === ADAPTIVE RISK/REWARD (VOLATILITY) ================
 // ======================================================
 useAdaptiveRR = input.bool(true,  "Use Adaptive RR on High Vol?")
-volAtrMult    = input.float(2.0,  "High-Vol Threshold (ATR×)", step = 0.1)
+volAtrMult    = input.float(2.0,  "High-Vol Threshold (ATRx)", step = 0.1)
 rrTightFactor = input.float(0.75, "RR Tighten Factor (High Vol)", minval = 0.25, maxval = 1.0, step = 0.05)
 
 // ======================================================
@@ -59,12 +59,17 @@ rrTightFactor = input.float(0.75, "RR Tighten Factor (High Vol)", minval = 0.25,
 // ======================================================
 useCoreFilters = input.bool(true, "Enable Core Filters (Vol/MACD/SR/Candle)?")
 maxDriftPips   = input.float(5.0, "Max Drift Pips", step = 0.1)
-useHtfConfirm  = input.bool(true, "HTF RSI Confirm?")
-htfRsiThresh   = input.int(50, "HTF RSI Threshold")
+
+// === NEW: Higher-timeframe direction confirm bundle (RSI+MA) ===
+useHtfDirection = input.bool(true, "Use 4H Direction Confirm (RSI<50 & Price<MA for sells, inverse for buys)?")
+htfRsiThresh    = input.int(50, "HTF RSI Threshold")
+
+// === NEW: Continuation check (break of prior bar) ===
+useContinuation = input.bool(true, "Require Continuation Break (close < low[1] for sell / > high[1] for buy)?")
 
 // ======================================================
 // === BOLLINGER FILTER =================================
-// ======================================================
+// (kept - optional)
 useBBFilter = input.bool(true, "Use Bollinger Filter?")
 bbLength    = input.int(20, "BB Length")
 bbMult      = input.float(2.0, "BB Mult")
@@ -72,17 +77,15 @@ showBB      = input.bool(true, "Show Bollinger Bands?")
 
 // ======================================================
 // === ALERT SPACING ====================================
-// ======================================================
+// (kept - unchanged)
 useAlertThreshold    = input.bool(true, "Enforce Min Pips Between Alerts?")
 alertFilterThreshold = input.int(10, "Min Pips Between Alerts", minval = 0, step = 1)
 
 // ======================================================
 // === TIMEFRAME CONFIGURATION ==========================
-// ======================================================
-// Reconfigured for 1H triggers aligned with 4H direction
+// 1H triggers aligned with 4H direction
 tf1 = "240"   // 4H directional trend filter
 tf2 = "60"    // 1H main trigger timeframe
-tf3 = "60"    // (entry timeframe = 1H)
 
 // ======================================================
 // === CORE SERIES CALCULATIONS =========================
@@ -96,11 +99,9 @@ bbBearish = close < basis and close > lower
 
 src_tf1 = request.security(syminfo.tickerid, tf1, close)
 src_tf2 = request.security(syminfo.tickerid, tf2, close)
-src_tf3 = request.security(syminfo.tickerid, tf3, close)
 
 rsi_tf1 = ta.rsi(src_tf1, rsiLength)
 rsi_tf2 = ta.rsi(src_tf2, rsiLength)
-rsi_tf3 = ta.rsi(src_tf3, rsiLength)
 sma_tf1 = ta.sma(src_tf1, maLength)
 sma_tf2 = ta.sma(src_tf2, maLength)
 ema_tf1 = ta.ema(src_tf1, emaLength)
@@ -130,18 +131,15 @@ flexSell  = useFlexMode and (rsiSellX or (rsi_tf2 > rsiSellLevel + rsiOffset))
 // ======================================================
 // === FILTER LOGIC =====================================
 // ======================================================
-htfConfirmBuy  = not useHtfConfirm or rsi_tf1 < htfRsiThresh
-htfConfirmSell = not useHtfConfirm or rsi_tf1 > htfRsiThresh
-isJpyPair  = str.contains(syminfo.ticker, "JPY")
-pairFilter = not isJpyPair or useJpyPairs
-inSession  = not useSession or not na(time(timeframe.period, "0800-2200", "GMT"))
-
+// volume and MACD on 1H
 vol_tf2   = request.security(syminfo.tickerid, tf2, volume)
 volMA_tf2 = ta.sma(vol_tf2, 20)
 volumeSpike = vol_tf2 > volMA_tf2 * 1.5
 [macdLine, signalLine, _] = ta.macd(src_tf2, 12, 26, 9)
-macdBull = macdLine > signalLine
-macdBear = macdLine < signalLine
+macdBull = macdLine > signalLine and macdLine > 0
+macdBear = macdLine < signalLine and macdLine < 0
+
+// SR and candle patterns on chart TF (1H)
 pivotHigh = ta.pivothigh(high, 5, 5)
 pivotLow  = ta.pivotlow(low, 5, 5)
 lastPH = ta.valuewhen(not na(pivotHigh), pivotHigh, 0)
@@ -151,23 +149,37 @@ nearSRBuy  = not na(lastPL) and math.abs(close - lastPL) <= atrVal * 0.5
 nearSRSell = not na(lastPH) and math.abs(close - lastPH) <= atrVal * 0.5
 bullEngulf = close > open and close[1] < open[1] and close > open[1] and open < close[1]
 bearEngulf = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+
 coreBuyOk  = not useCoreFilters or (volumeSpike and macdBull and nearSRBuy  and bullEngulf)
 coreSellOk = not useCoreFilters or (volumeSpike and macdBear and nearSRSell and bearEngulf)
 
-// ======================================================
-// === DRIFT / SIGNAL VALIDATION ========================
-// ======================================================
+// pair, session, drift
+isJpyPair  = str.contains(syminfo.ticker, "JPY")
+pairFilter = not isJpyPair or useJpyPairs
+inSession  = not useSession or not na(time(timeframe.period, "0800-2200", "GMT"))
 pip = syminfo.mintick == 0.00001 ? 0.0001 : syminfo.mintick == 0.001 ? 0.01 : syminfo.mintick
 driftPips = math.abs(close - close[1]) / pip
 driftOk   = driftPips <= maxDriftPips
 
-buyRaw  = (baseBuy  or flexBuy)  and htfConfirmBuy  and coreBuyOk  and (not useBBFilter or bbBullish) and inSession and pairFilter and driftOk
-sellRaw = (baseSell or flexSell) and htfConfirmSell and coreSellOk and (not useBBFilter or bbBearish) and inSession and pairFilter and driftOk
+// HTF direction bundle (fixes prior sell inversion)
+htfBuyOK  = not useHtfDirection or (rsi_tf1 > htfRsiThresh and src_tf1 > (useEMA ? ema_tf1 : sma_tf1))
+htfSellOK = not useHtfDirection or (rsi_tf1 < htfRsiThresh and src_tf1 < (useEMA ? ema_tf1 : sma_tf1))
 
+// Continuation break (matches your screenshots)
+contBuy  = not useContinuation or close > high[1]
+contSell = not useContinuation or close < low[1]
+
+// ======================================================
+// === SIGNALS ==========================================
+// ======================================================
+buyRaw  = (baseBuy  or flexBuy)  and coreBuyOk  and inSession and pairFilter and driftOk and (not useBBFilter or bbBullish) and htfBuyOK  and contBuy
+sellRaw = (baseSell or flexSell) and coreSellOk and inSession and pairFilter and driftOk and (not useBBFilter or bbBearish) and htfSellOK and contSell
+
+// Guard dual fire
 if buyRaw and sellRaw
     buyRaw := false
     sellRaw := false
-    label.new(bar_index, high, "⚠ Dual Signal", style = label.style_label_left, color = color.orange)
+    label.new(bar_index, high, "Dual Signal", style = label.style_label_left, color = color.orange)
 
 triggerBuy  = buyRaw  and (not useCloseOnly or barstate.isconfirmed)
 triggerSell = sellRaw and (not useCloseOnly or barstate.isconfirmed)
@@ -259,7 +271,7 @@ timestamp = year_str + "-" + month_str + "-" + day_str + " " + hour_str + ":" + 
 instrument_id = str.replace_all(syminfo.ticker, "OANDA:", "")
 instrument_id := str.substring(instrument_id, 0, 3) + "_" + str.substring(instrument_id, 3, 6)
 
-// === Safe JSON builders ===
+// Safe JSON builders (UNCHANGED)
 f_make_trade_msg(_side, _entry, _sl, _tp, _instr, _ts, _riskpips) =>
     str.format('{{"message":"{0}","entry":{1},"sl":{2},"tp":{3},"instrument":"{4}","timestamp":"{5}","risk_pips":{6}}}',
      _side, str.tostring(_entry, format.mintick), str.tostring(_sl, format.mintick), str.tostring(_tp, format.mintick), _instr, _ts, str.tostring(_riskpips, "#.#"))
@@ -271,13 +283,13 @@ f_make_simple_msg(_side, _instr, _ts, _pips) =>
 // ======================================================
 // === ALERTS (JSON OUTPUT) =============================
 // ======================================================
-if use5mAlerts and newTradeLong and allowAlert
+if use1hAlerts and newTradeLong and allowAlert
     entry_val = na(tradeEntry) ? close : tradeEntry
     riskPips  = math.abs(entry_val - tradeSL) / pip
     alert(f_make_trade_msg("BUY", entry_val, tradeSL, tradeTP, instrument_id, timestamp, riskPips), alert.freq_once_per_bar_close)
     lastAlertPrice := close
 
-if use5mAlerts and newTradeShort and allowAlert
+if use1hAlerts and newTradeShort and allowAlert
     entry_val = na(tradeEntry) ? close : tradeEntry
     riskPips  = math.abs(tradeSL - entry_val) / pip
     alert(f_make_trade_msg("SELL", entry_val, tradeSL, tradeTP, instrument_id, timestamp, riskPips), alert.freq_once_per_bar_close)
